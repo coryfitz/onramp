@@ -342,7 +342,7 @@ def create_react_native_app(app_name, output_dir="."):
         print("⚠️  Could not initialize React Native. You may need to run this manually.")
     
     print(f"""
-React Native app with React Strict DOM created successfully
+React Native app with React Strict DOM created successfully!
 
 Next steps:
 1. cd {app_name}

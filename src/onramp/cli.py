@@ -7,6 +7,7 @@ import socket
 import tomllib
 import importlib.resources
 import webbrowser
+from rn_app import create_react_native_app
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 config_path = os.path.join(script_dir, "config.toml")
@@ -131,6 +132,7 @@ def main():
     if args.command == "new":
         if args.name:
             create_app_directory(args.name)
+            create_react_native_app(args.name)
         else:
             print(f"Please provide a name for the new app. Usage: '{FRAMEWORK_NAME.lower()} new <name>'")
     elif args.command == "run":
