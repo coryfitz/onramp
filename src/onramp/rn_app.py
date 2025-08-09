@@ -3,7 +3,6 @@
 React Native + React Strict DOM App Generator
 
 This script creates a React Native app with React Strict DOM as the representation layer.
-React Strict DOM provides a DOM-like API that works across web and native platforms.
 """
 
 import os
@@ -343,7 +342,7 @@ def create_react_native_app(app_name, output_dir="."):
         print("⚠️  Could not initialize React Native. You may need to run this manually.")
     
     print(f"""
-🎉 React Native app with React Strict DOM created successfully!
+React Native app with React Strict DOM created successfully
 
 Next steps:
 1. cd {app_name}
@@ -354,13 +353,6 @@ Next steps:
 4. For iOS:
    npm run ios
 
-The app uses React Strict DOM which provides:
-- Unified API across web and native
-- DOM-like elements (html.div, html.p, etc.)
-- Consistent styling and behavior
-- Better performance than traditional React Native
-
-Happy coding! 🚀
 """)
 
 def main():
