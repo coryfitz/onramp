@@ -3,6 +3,7 @@
 React Native + React Strict DOM App Generator
 
 This script creates a React Native app with React Strict DOM as the representation layer.
+Uses Vite for web development instead of webpack for better reliability.
 """
 
 import os
@@ -33,205 +34,230 @@ def run_command(command, cwd=None, check=True):
         raise
 
 def create_package_json(app_name, project_dir):
-    """Create package.json with React Strict DOM dependencies."""
+    """Create package.json with React Strict DOM dependencies using Vite."""
     package_json = {
         "name": app_name,
         "version": "0.0.1",
+        "type": "module",
         "private": True,
         "scripts": {
-            "android": "react-native run-android",
-            "ios": "react-native run-ios",
+            "dev": "vite",
+            "build": "vite build",
+            "preview": "vite preview",
             "lint": "eslint .",
-            "start": "react-native start",
-            "test": "jest",
-            "web": "webpack serve --config webpack.config.js"
+            "test": "jest"
         },
         "dependencies": {
             "react": "^18.2.0",
-            "react-native": "^0.72.0",
+            "react-dom": "^18.2.0",
             "react-strict-dom": "^0.0.28",
-            "react-native-web": "^0.19.0"
+            "@stylexjs/stylex": "^0.9.0"
         },
         "devDependencies": {
-            "@babel/core": "^7.20.0",
-            "@babel/preset-env": "^7.20.0",
-            "@babel/runtime": "^7.20.0",
-            "@react-native/eslint-config": "^0.72.0",
-            "@react-native/metro-config": "^0.72.0",
-            "@tsconfig/react-native": "^3.0.0",
-            "@types/react": "^18.0.24",
-            "@types/react-test-renderer": "^18.0.0",
-            "babel-jest": "^29.2.1",
+            "@types/react": "^18.2.0",
+            "@types/react-dom": "^18.2.0",
+            "@vitejs/plugin-react": "^4.0.0",
+            "@stylexjs/babel-plugin": "^0.9.0",
+            "vite": "^4.4.0",
             "eslint": "^8.19.0",
-            "jest": "^29.2.1",
-            "metro-react-native-babel-preset": "^0.76.0",
-            "prettier": "^2.4.1",
-            "react-test-renderer": "^18.2.0",
-            "typescript": "^4.8.4",
-            "webpack": "^5.0.0",
-            "webpack-cli": "^5.0.0",
-            "webpack-dev-server": "^4.0.0",
-            "html-webpack-plugin": "^5.0.0"
-        },
-        "jest": {
-            "preset": "react-native"
+            "prettier": "^2.4.1"
         }
     }
     
     with open(project_dir / "package.json", "w") as f:
         json.dump(package_json, f, indent=2)
 
-def create_babel_config(project_dir):
-    """Create Babel configuration for React Strict DOM."""
-    babel_config = {
-        "presets": ["module:metro-react-native-babel-preset"],
-        "plugins": [
-            ["react-strict-dom/babel-plugin"]
-        ]
-    }
-    
-    with open(project_dir / "babel.config.js", "w") as f:
-        f.write(f"module.exports = {json.dumps(babel_config, indent=2)};")
+def create_vite_config(project_dir):
+    """Create Vite configuration for React Strict DOM."""
+    vite_config = """import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 
-def create_metro_config(project_dir):
-    """Create Metro configuration for React Native."""
-    metro_config = """const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
-
-/**
- * Metro configuration
- * https://facebook.github.io/metro/docs/configuration
- */
-const config = {
-  resolver: {
-    alias: {
-      'react-native': 'react-native-web',
-    },
-  },
-};
-
-module.exports = mergeConfig(getDefaultConfig(__dirname), config);
-"""
-    
-    with open(project_dir / "metro.config.js", "w") as f:
-        f.write(metro_config)
-
-def create_webpack_config(project_dir):
-    """Create Webpack configuration for web support."""
-    webpack_config = """const path = require('path');
-const HtmlWebpackPlugin = require('html-webpack-plugin');
-
-module.exports = {
-  entry: './index.web.js',
-  mode: 'development',
-  devServer: {
-    static: {
-      directory: path.join(__dirname, 'public'),
-    },
-    compress: true,
-    port: 3000,
-  },
-  module: {
-    rules: [
-      {
-        test: /\\.(js|jsx|ts|tsx)$/,
-        exclude: /node_modules/,
-        use: {
-          loader: 'babel-loader',
-        },
-      },
-    ],
-  },
-  resolve: {
-    extensions: ['.js', '.jsx', '.ts', '.tsx'],
-    alias: {
-      'react-native$': 'react-native-web',
-    },
-  },
+export default defineConfig({
   plugins: [
-    new HtmlWebpackPlugin({
-      template: './public/index.html',
-    }),
+    react({
+      babel: {
+        presets: [
+          ['react-strict-dom/babel-preset', { 
+            rootDir: process.cwd() 
+          }]
+        ]
+      }
+    })
   ],
-};
+  server: {
+    port: 3000,
+    open: true
+  }
+})
 """
     
-    with open(project_dir / "webpack.config.js", "w") as f:
-        f.write(webpack_config)
+    with open(project_dir / "vite.config.js", "w") as f:
+        f.write(vite_config)
 
 def create_app_component(project_dir):
     """Create the main App component using React Strict DOM."""
-    app_component = '''import React from 'react';
-import {html} from 'react-strict-dom';
+    app_component = '''import React, { useState } from 'react';
+import { html } from 'react-strict-dom';
 
 function App() {
+  const [count, setCount] = useState(0);
+
   return (
     <html.div
       style={{
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
+        padding: '2rem',
+        textAlign: 'center',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        minHeight: '100vh',
         backgroundColor: '#f5f5f5',
-        padding: 20,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
       }}
     >
       <html.div
         style={{
           backgroundColor: 'white',
-          padding: 30,
-          borderRadius: 10,
-          shadowColor: '#000',
-          shadowOffset: {width: 0, height: 2},
-          shadowOpacity: 0.1,
-          shadowRadius: 8,
-          elevation: 5,
-          maxWidth: 400,
-          width: '100%',
+          padding: '3rem',
+          borderRadius: '12px',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+          maxWidth: '500px',
+          width: '100%'
         }}
       >
         <html.h1
           style={{
-            fontSize: 24,
-            fontWeight: 'bold',
-            textAlign: 'center',
-            marginBottom: 20,
+            fontSize: '2.5rem',
             color: '#333',
+            marginBottom: '1rem',
+            fontWeight: 'bold'
           }}
         >
-          Welcome to React Native + React Strict DOM!
+          🚀 React Strict DOM
         </html.h1>
         
         <html.p
           style={{
-            fontSize: 16,
-            textAlign: 'center',
+            fontSize: '1.1rem',
+            marginBottom: '2rem',
             color: '#666',
-            lineHeight: 1.5,
-            marginBottom: 20,
+            lineHeight: '1.6'
           }}
         >
-          This app uses React Strict DOM as the representation layer,
-          providing a unified API across web and native platforms.
+          Universal components that work on web and native platforms!
         </html.p>
         
-        <html.button
+        <html.div
           style={{
-            backgroundColor: '#007AFF',
-            color: 'white',
-            padding: 12,
-            borderRadius: 8,
-            border: 'none',
-            fontSize: 16,
-            fontWeight: '600',
-            cursor: 'pointer',
-            width: '100%',
-          }}
-          onClick={() => {
-            console.log('Button pressed!');
-            // Add your button logic here
+            backgroundColor: '#f8f9fa',
+            padding: '2rem',
+            borderRadius: '8px',
+            marginBottom: '2rem'
           }}
         >
-          Get Started
-        </html.button>
+          <html.p
+            style={{
+              fontSize: '1.3rem',
+              marginBottom: '1.5rem',
+              fontWeight: 'bold'
+            }}
+          >
+            Counter: <span style={{ color: '#007AFF' }}>{count}</span>
+          </html.p>
+          
+          <html.div
+            style={{
+              display: 'flex',
+              gap: '1rem',
+              justifyContent: 'center',
+              flexWrap: 'wrap'
+            }}
+          >
+            <html.button
+              onClick={() => setCount(count + 1)}
+              style={{
+                backgroundColor: '#007AFF',
+                color: 'white',
+                border: 'none',
+                padding: '12px 24px',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              ➕ Add One
+            </html.button>
+            
+            <html.button
+              onClick={() => setCount(Math.max(0, count - 1))}
+              style={{
+                backgroundColor: '#FF9500',
+                color: 'white',
+                border: 'none',
+                padding: '12px 24px',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              ➖ Subtract
+            </html.button>
+            
+            <html.button
+              onClick={() => setCount(0)}
+              style={{
+                backgroundColor: '#FF3B30',
+                color: 'white',
+                border: 'none',
+                padding: '12px 24px',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              🔄 Reset
+            </html.button>
+          </html.div>
+        </html.div>
+        
+        <html.div
+          style={{
+            backgroundColor: count > 10 ? '#d4edda' : count > 5 ? '#fff3cd' : '#d1ecf1',
+            color: count > 10 ? '#155724' : count > 5 ? '#856404' : '#0c5460',
+            padding: '1rem',
+            borderRadius: '6px',
+            border: `2px solid ${count > 10 ? '#c3e6cb' : count > 5 ? '#ffeaa7' : '#bee5eb'}`
+          }}
+        >
+          <html.p style={{ margin: 0, fontWeight: '500' }}>
+            {count > 10 ? '🎉 Wow! You\\'re really clicking!' : 
+             count > 5 ? '👏 Nice work!' : 
+             count > 0 ? '✨ Keep going!' : 
+             '👆 Click a button to get started!'}
+          </html.p>
+        </html.div>
+        
+        <html.div
+          style={{
+            marginTop: '2rem',
+            padding: '1rem',
+            backgroundColor: '#f8f9fa',
+            borderRadius: '6px',
+            fontSize: '0.9rem',
+            color: '#666'
+          }}
+        >
+          <html.p style={{ margin: 0 }}>
+            💡 <strong>React Strict DOM Benefits:</strong><br/>
+            • Same components work on web & mobile<br/>
+            • DOM-like API (html.div, html.button, etc.)<br/>
+            • Better performance than traditional React Native<br/>
+            • Perfect for building Tailwind → StyleX plugins!
+          </html.p>
+        </html.div>
       </html.div>
     </html.div>
   );
@@ -240,55 +266,42 @@ function App() {
 export default App;
 '''
     
-    with open(project_dir / "App.js", "w") as f:
+    with open(project_dir / "src" / "App.jsx", "w") as f:
         f.write(app_component)
 
-def create_index_files(project_dir, app_name):
-    """Create index files for React Native and web."""
-    
-    # React Native index
-    rn_index = f'''import {{AppRegistry}} from 'react-native';
-import App from './App';
-import {{name as appName}} from './app.json';
+def create_main_entry(project_dir):
+    """Create the main entry point for Vite."""
+    main_jsx = '''import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.jsx'
 
-AppRegistry.registerComponent(appName, () => App);
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
 '''
     
-    with open(project_dir / "index.js", "w") as f:
-        f.write(rn_index)
-    
-    # Web index
-    web_index = '''import React from 'react';
-import {createRoot} from 'react-dom/client';
-import App from './App';
-
-const container = document.getElementById('root');
-const root = createRoot(container);
-root.render(<App />);
-'''
-    
-    with open(project_dir / "index.web.js", "w") as f:
-        f.write(web_index)
+    with open(project_dir / "src" / "main.jsx", "w") as f:
+        f.write(main_jsx)
 
 def create_html_template(project_dir):
-    """Create HTML template for web version."""
-    os.makedirs(project_dir / "public", exist_ok=True)
-    
+    """Create HTML template for Vite."""
     html_template = '''<!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>React Native + React Strict DOM</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>React Strict DOM App</title>
   </head>
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
 '''
     
-    with open(project_dir / "public" / "index.html", "w") as f:
+    with open(project_dir / "index.html", "w") as f:
         f.write(html_template)
 
 def create_app_json(project_dir, app_name):
@@ -301,63 +314,159 @@ def create_app_json(project_dir, app_name):
     with open(project_dir / "app.json", "w") as f:
         json.dump(app_json, f, indent=2)
 
-def create_react_native_app(app_name, output_dir="."):
-    """Create a complete React Native app with React Strict DOM."""
+def create_readme(project_dir, app_name):
+    """Create README with instructions."""
+    readme_content = f'''# {app_name}
+
+React Strict DOM web app with universal components.
+
+## Features
+
+- 🚀 **React Strict DOM**: Universal components that work on web and native
+- ⚡ **Vite**: Fast development server and build tool
+- 🎯 **Ready for plugins**: Perfect foundation for Tailwind → StyleX conversion
+- 📱 **Future-ready**: Same code will work on native when React Native supports React 19
+
+## Development
+
+### Web Development
+```bash
+npm run dev        # Start Vite dev server
+npm run build      # Build for production
+npm run preview    # Preview production build
+```
+
+## Project Structure
+
+```
+{app_name}/
+├── src/
+│   ├── App.jsx           # Main app component
+│   └── main.jsx          # Entry point
+├── index.html            # HTML template
+├── vite.config.js        # Vite configuration
+├── package.json          # Dependencies and scripts
+└── README.md            # This file
+```
+
+## Adding Your Tailwind → StyleX Plugin
+
+This project is set up perfectly for adding your custom Babel plugin:
+
+```javascript
+// vite.config.js
+export default defineConfig({{
+  plugins: [
+    react({{
+      babel: {{
+        presets: [
+          ['react-strict-dom/babel-preset', {{ 
+            rootDir: process.cwd() 
+          }}]
+        ],
+        plugins: [
+          ['your-tailwind-to-stylex-plugin', {{
+            // Your plugin options
+          }}]
+        ]
+      }}
+    }})
+  ],
+}})
+```
+
+## Adding React Native Support Later
+
+When React Native updates to support React 19, you can add native support:
+
+```bash
+# Install React Native dependencies
+npm install react-native@latest
+npx react-native init --skip-install
+```
+
+Then add these scripts to package.json:
+```json
+{{
+  "scripts": {{
+    "android": "react-native run-android",
+    "ios": "react-native run-ios", 
+    "start": "react-native start"
+  }}
+}}
+```
+
+## React Strict DOM Benefits
+
+- **Universal API**: `html.div`, `html.button`, etc. work everywhere
+- **Better Performance**: Optimized for both web and native
+- **Familiar Syntax**: DOM-like API that's easy to learn
+- **Plugin Ready**: Perfect for build-time transformations
+
+Happy coding! 🎉
+'''
     
-    print(f"Creating React Native app with React Strict DOM: {app_name}")
+    with open(project_dir / "README.md", "w") as f:
+        f.write(readme_content)
+
+def create_react_native_app(app_name, output_dir="."):
+    """Create a React Strict DOM web app (React Native support coming when ecosystem catches up to React 19)."""
+    
+    print(f"Creating React Strict DOM web app: {app_name}")
     
     # Create project directory
     project_dir = Path(output_dir) / app_name
     project_dir.mkdir(parents=True, exist_ok=True)
     
+    # Create src directory
+    src_dir = project_dir / "src"
+    src_dir.mkdir(exist_ok=True)
+    
     print(f"Creating project in: {project_dir}")
     
     # Create all configuration files
     create_package_json(app_name, project_dir)
-    create_babel_config(project_dir)
-    create_metro_config(project_dir)
-    create_webpack_config(project_dir)
+    create_vite_config(project_dir)
     create_app_json(project_dir, app_name)
+    create_html_template(project_dir)
+    create_readme(project_dir, app_name)
     
     # Create source files
     create_app_component(project_dir)
-    create_index_files(project_dir, app_name)
-    create_html_template(project_dir)
+    create_main_entry(project_dir)
     
     print(f"✅ Project structure created successfully!")
     
     # Install dependencies
     print("Installing dependencies...")
     try:
-        run_command("npm install", cwd=project_dir)
+        run_command("npm install --legacy-peer-deps", cwd=project_dir)
         print("✅ Dependencies installed successfully!")
     except subprocess.CalledProcessError:
-        print("⚠️  Failed to install dependencies. Run 'npm install' manually in the project directory.")
-    
-    # Initialize React Native (for native components)
-    try:
-        print("Initializing React Native...")
-        run_command("npx react-native init --skip-install", cwd=project_dir)
-    except subprocess.CalledProcessError:
-        print("⚠️  Could not initialize React Native. You may need to run this manually.")
+        print("⚠️  Failed to install dependencies. Run 'npm install --legacy-peer-deps' manually in the project directory.")
     
     print(f"""
-React Native app with React Strict DOM created successfully!
+🎉 React Strict DOM web app created successfully!
 
 Next steps:
 1. cd {app_name}
-2. For web development:
-   npm run web
-3. For Android:
-   npm run android
-4. For iOS:
-   npm run ios
+2. npm run dev                    # Start web development
 
+Features:
+✅ Vite for fast development
+✅ React Strict DOM for universal components  
+✅ Ready for your Tailwind → StyleX plugin
+✅ React 18 with React Strict DOM
+
+Note: This creates a web-first setup using React 18. React Native support
+can be added when the ecosystem stabilizes around compatible versions.
+
+The app includes an interactive demo showing React Strict DOM in action!
 """)
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create a React Native app with React Strict DOM"
+        description="Create a React Strict DOM web app (React Native support coming with React 19 compatibility)"
     )
     parser.add_argument(
         "app_name",
