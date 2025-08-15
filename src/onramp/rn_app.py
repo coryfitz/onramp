@@ -151,8 +151,24 @@ export default function App() {
           fontWeight: 'bold',
           textAlign: 'center'
         }}>
-          🚀 React Native + React Strict DOM!
+          Welcome to the OnRamp App Framework
         </html.h1>
+
+        <html.img style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center'
+        }}src="static/logo.png" alt="OnRamp Logo"></html.img>
+
+        <html.a style={{
+          fontSize: 24,
+          color: '#333',
+          marginBottom: 16,
+          fontWeight: 'bold',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center'
+        }}href="https://onrampframework.com" target="_blank">Learn OnRamp</html.a>
         
         <html.p style={{
           fontSize: 16,
