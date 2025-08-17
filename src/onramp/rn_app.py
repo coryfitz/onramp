@@ -161,7 +161,6 @@ export default function App() {
         }}src="static/logo.png" alt="OnRamp Logo"></html.img>
 
         <html.a style={{
-          fontSize: 24,
           color: '#333',
           marginBottom: 16,
           fontWeight: 'bold',
