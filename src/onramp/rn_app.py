@@ -9,6 +9,7 @@ import os
 import subprocess
 import json
 import argparse
+import shutil
 from pathlib import Path
 
 def run_command(command, cwd=None, check=True):
@@ -154,20 +155,33 @@ export default function App() {
           Welcome to the OnRamp App Framework
         </html.h1>
 
-        <html.img style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center'
-        }}src="static/logo.png" alt="OnRamp Logo"></html.img>
+        <html.img 
+          src="./logo.png" 
+          alt="OnRamp Logo"
+          style={{
+            width: 120,
+            height: 120,
+            marginBottom: 20,
+            display: 'block',
+            marginLeft: 'auto',
+            marginRight: 'auto'
+          }}
+        />
 
-        <html.a style={{
-          color: '#333',
-          marginBottom: 16,
-          fontWeight: 'bold',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center'
-        }}href="https://onrampframework.com" target="_blank">Learn OnRamp</html.a>
+        <html.a 
+          href="https://onrampframework.com" 
+          target="_blank"
+          style={{
+            color: '#007AFF',
+            textDecoration: 'none',
+            fontWeight: 'bold',
+            display: 'block',
+            textAlign: 'center',
+            marginBottom: 20
+          }}
+        >
+          Learn OnRamp
+        </html.a>
         
       </html.div>
     </html.div>
@@ -228,6 +242,31 @@ root.render(<App />);
     with open(project_dir / "index.web.js", "w") as f:
         f.write(web_entry)
 
+def copy_static_assets(project_dir):
+    """Copy static assets like logo.png to the project."""
+    # Look for static folder relative to the script location
+    script_dir = Path(__file__).parent
+    static_dir = script_dir / "static"
+    
+    if static_dir.exists():
+        print("Copying static assets...")
+        # Copy logo.png to the project root for easy access
+        logo_source = static_dir / "logo.png"
+        if logo_source.exists():
+            logo_dest = project_dir / "logo.png"
+            shutil.copy2(logo_source, logo_dest)
+            print(f"✅ Copied {logo_source} to {logo_dest}")
+        
+        # Also copy to public folder for web access
+        public_dir = project_dir / "public"
+        if logo_source.exists():
+            logo_web_dest = public_dir / "logo.png"
+            shutil.copy2(logo_source, logo_web_dest)
+            print(f"✅ Copied {logo_source} to {logo_web_dest}")
+    else:
+        print("⚠️  Static folder not found - skipping asset copy")
+        print(f"   Looking for: {static_dir}")
+
 def create_readme(project_dir, app_name):
     """Create README with instructions."""
     readme_content = f'''# {app_name}
@@ -281,6 +320,9 @@ def create_react_native_app(app_name, output_dir="."):
     create_readme(project_dir, app_name)
     create_app_component(project_dir)
     create_index_files(project_dir, app_name)
+    
+    # Copy static assets after creating the project structure
+    copy_static_assets(project_dir)
     
     print(f"✅ Project structure created successfully!")
     
