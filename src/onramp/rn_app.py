@@ -169,7 +169,7 @@ export default function App() {
         />
 
         <html.a 
-          href="https://onrampframework.com" 
+          href="https://www.onrampframework.com" 
           target="_blank"
           style={{
             color: '#007AFF',
