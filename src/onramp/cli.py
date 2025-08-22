@@ -85,6 +85,14 @@ def create_app_directory(name):
         master_app = importlib.resources.files(TEMPLATES_MODULE) / 'app.py'
         shutil.copyfile(master_app, new_app_path)
 
+        # Create backend directory structure
+        backend_dir = os.path.join(directory_path, 'backend')
+        os.makedirs(backend_dir, exist_ok=True)
+
+        # Create models directory inside backend
+        models_dir = os.path.join(backend_dir, 'models')
+        os.makedirs(models_dir, exist_ok=True)
+
         # Create app subdirectories
         app_dir = os.path.join(directory_path, 'app')
         os.makedirs(app_dir, exist_ok=True)
