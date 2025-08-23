@@ -93,6 +93,8 @@ def create_app_directory(name):
         models_dir = os.path.join(backend_dir, 'models')
         os.makedirs(models_dir, exist_ok=True)
 
+        new_models_path = os.path.join(models_dir, 'models.py')
+
         # Create app subdirectories
         app_dir = os.path.join(directory_path, 'app')
         os.makedirs(app_dir, exist_ok=True)
