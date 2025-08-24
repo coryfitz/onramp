@@ -94,6 +94,8 @@ def create_app_directory(name):
         os.makedirs(models_dir, exist_ok=True)
 
         new_models_path = os.path.join(models_dir, 'models.py')
+        with open(new_models_path, 'w') as f:
+            f.write("# Models for your application\n")
 
         # Create app subdirectories
         app_dir = os.path.join(directory_path, 'app')
