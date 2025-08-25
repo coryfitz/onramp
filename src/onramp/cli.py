@@ -95,7 +95,7 @@ def create_app_directory(name):
 
         new_models_path = os.path.join(models_dir, 'models.py')
         master_models = importlib.resources.files(TEMPLATES_MODULE) / 'models.py'
-        shutil.copyfile(master_models, models_dir)
+        shutil.copyfile(master_models, new_models_path)
 
         #new_models_path = os.path.join(models_dir, 'models.py')
         #with open(new_models_path, 'w') as f:
