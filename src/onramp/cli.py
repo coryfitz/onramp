@@ -116,11 +116,6 @@ def create_app_directory(name):
         master_index = importlib.resources.files(TEMPLATES_MODULE) / 'index.py'
         shutil.copyfile(master_index, new_index_path)
 
-        # Copy index.html
-        new_index_html_path = os.path.join(static_dir, 'index.html')
-        master_index_html = importlib.resources.files(TEMPLATES_MODULE) / 'index.html'
-        shutil.copyfile(master_index_html, new_index_html_path)
-
         # Copy logo.png
         new_logo_path = os.path.join(static_dir, 'logo.png')
         master_logo = importlib.resources.files(TEMPLATES_MODULE) / 'logo.png'
