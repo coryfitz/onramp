@@ -5,7 +5,6 @@ React Native + React Strict DOM App Generator
 This script creates a React Native app with React Strict DOM using Metro bundler.
 """
 
-import os
 import subprocess
 import json
 import argparse
@@ -307,7 +306,7 @@ def create_react_native_app(app_name, output_dir="."):
     """Create a React Native app with React Strict DOM using Metro."""
     print(f"Creating React Native + React Strict DOM app: {app_name}")
     
-    project_dir = Path(output_dir) / app_name / "frontend"
+    project_dir = Path(output_dir) / app_name / "build"
     project_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"Creating project in: {project_dir}")
@@ -334,13 +333,13 @@ def create_react_native_app(app_name, output_dir="."):
         print("✅ Dependencies installed successfully!")
     except subprocess.CalledProcessError:
         print("⚠️  Installation failed. Please run manually:")
-        print(f"   cd {app_name}/frontend && npm install --legacy-peer-deps")
+        print(f"   cd {app_name}/build && npm install --legacy-peer-deps")
     
     print(f"""
 🎉 React Native + React Strict DOM app created successfully!
 
 Next steps:
-1. cd {app_name}/frontend
+1. cd {app_name}/build
 2. npm start                      # Start Metro bundler
 3. npm run android               # Run on Android
 4. npm run ios                   # Run on iOS

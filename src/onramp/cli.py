@@ -53,7 +53,7 @@ def run_uvicorn(port=8000):
     except subprocess.CalledProcessError as e:
         print(f"An error occurred while running Uvicorn: {e}")
 
-def create_app_directory(name):
+def create_app_directory(name, api_only=False):
     """Create a new application directory using templates."""
     directory_path = os.path.join(os.getcwd(), name)
 
@@ -66,30 +66,21 @@ def create_app_directory(name):
 
         TEMPLATES_MODULE = importlib.import_module(f"{MODULE_NAME}.templates")
 
-        # Copy settings.py
-        new_settings_path = os.path.join(directory_path, 'settings.py')
+        backend_dir = os.path.join(directory_path, 'app')
+        os.makedirs(backend_dir, exist_ok=True)
+
+        new_settings_path = os.path.join(backend_dir, 'settings.py')
         master_settings = importlib.resources.files(TEMPLATES_MODULE) / 'settings.py'
         shutil.copyfile(master_settings, new_settings_path)
 
-        # Append app-specific settings
-        with open(new_settings_path, 'a') as f:
-            f.write(f"\n# App-specific settings\nAPP_NAME = '{name}'\n")
-
-        # Copy main.py
-        new_main_path = os.path.join(directory_path, 'main.py')
+        new_main_path = os.path.join(backend_dir, 'main.py')
         master_main = importlib.resources.files(TEMPLATES_MODULE) / 'main.py'
         shutil.copyfile(master_main, new_main_path)
 
-        # Copy app.py
-        new_app_path = os.path.join(directory_path, 'app.py')
+        new_app_path = os.path.join(backend_dir, 'app.py')
         master_app = importlib.resources.files(TEMPLATES_MODULE) / 'app.py'
         shutil.copyfile(master_app, new_app_path)
 
-        # Create backend directory structure
-        backend_dir = os.path.join(directory_path, 'backend')
-        os.makedirs(backend_dir, exist_ok=True)
-
-        # Create models directory inside backend
         models_dir = os.path.join(backend_dir, 'models')
         os.makedirs(models_dir, exist_ok=True)
 
@@ -97,22 +88,17 @@ def create_app_directory(name):
         master_models = importlib.resources.files(TEMPLATES_MODULE) / 'models.py'
         shutil.copyfile(master_models, new_models_path)
 
-        # Create app subdirectories
-        app_dir = os.path.join(directory_path, 'app')
-        os.makedirs(app_dir, exist_ok=True)
-
-        routes_dir = os.path.join(app_dir, 'routes')
+        routes_dir = os.path.join(backend_dir, 'routes')
         os.makedirs(routes_dir, exist_ok=True)
 
-        static_dir = os.path.join(app_dir, 'static')
-        os.makedirs(static_dir, exist_ok=True)
-
-        # Copy index.py
         new_index_path = os.path.join(routes_dir, 'index.py')
         master_index = importlib.resources.files(TEMPLATES_MODULE) / 'index.py'
         shutil.copyfile(master_index, new_index_path)
 
-        print(f"Created a new {FRAMEWORK_NAME} app at {directory_path}")
+        if api_only:
+            print(f"Created a new {FRAMEWORK_NAME} API-only app at {directory_path}")
+        else:
+            print(f"Created a new {FRAMEWORK_NAME} app at {directory_path}")
 
     except Exception as e:
         print(f"An error occurred while creating the directory: {e}")
@@ -126,6 +112,7 @@ def main():
     parser.add_argument("command", help="The command to run (e.g., new or run)")
     parser.add_argument("name", nargs='?', help="The name of the app directory to be created (for 'new' command)")
     parser.add_argument("--port", type=int, help="The port to run the development server on (for 'run' command)", default=8000)
+    parser.add_argument("--api", action="store_true", help="Create API-only app without React Native frontend (for 'new' command)")
 
     # Parse the arguments
     args = parser.parse_args()
@@ -133,8 +120,9 @@ def main():
     # Check which command is provided
     if args.command == "new":
         if args.name:
-            create_app_directory(args.name)
-            create_react_native_app(args.name)
+            create_app_directory(args.name, api_only=args.api)
+            if not args.api:
+                create_react_native_app(args.name)
         else:
             print(f"Please provide a name for the new app. Usage: '{FRAMEWORK_NAME.lower()} new <name>'")
     elif args.command == "run":
