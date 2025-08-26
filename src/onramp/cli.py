@@ -97,10 +97,6 @@ def create_app_directory(name):
         master_models = importlib.resources.files(TEMPLATES_MODULE) / 'models.py'
         shutil.copyfile(master_models, new_models_path)
 
-        #new_models_path = os.path.join(models_dir, 'models.py')
-        #with open(new_models_path, 'w') as f:
-        #    f.write("# Models for your application\n")
-
         # Create app subdirectories
         app_dir = os.path.join(directory_path, 'app')
         os.makedirs(app_dir, exist_ok=True)
@@ -115,11 +111,6 @@ def create_app_directory(name):
         new_index_path = os.path.join(routes_dir, 'index.py')
         master_index = importlib.resources.files(TEMPLATES_MODULE) / 'index.py'
         shutil.copyfile(master_index, new_index_path)
-
-        # Copy logo.png
-        new_logo_path = os.path.join(static_dir, 'logo.png')
-        master_logo = importlib.resources.files(TEMPLATES_MODULE) / 'logo.png'
-        shutil.copyfile(master_logo, new_logo_path)
 
         print(f"Created a new {FRAMEWORK_NAME} app at {directory_path}")
 
