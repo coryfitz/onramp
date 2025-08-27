@@ -7,6 +7,7 @@ import socket
 import tomllib
 import importlib.resources
 import webbrowser
+import platform
 from .rn_app import create_react_native_app
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +31,35 @@ def find_next_available_port(starting_port=8000):
         port += 1
     return port
 
+def open_new_terminal_and_run_npm(build_dir):
+    """Open a new terminal window and run npm start in the build directory."""
+    system = platform.system()
+    
+    if system == "Windows":
+        # Windows
+        subprocess.Popen(['start', 'cmd', '/k', f'cd /d "{build_dir}" && npm start'], shell=True)
+    elif system == "Darwin":
+        # macOS
+        subprocess.Popen(['osascript', '-e', f'tell application "Terminal" to do script "cd \\"{build_dir}\\" && npm start"'])
+    else:
+        # Linux and other Unix-like systems
+        # Try common terminal emulators
+        terminal_commands = [
+            ['gnome-terminal', '--', 'bash', '-c', f'cd "{build_dir}" && npm start; exec bash'],
+            ['xterm', '-e', f'cd "{build_dir}" && npm start; bash'],
+            ['konsole', '-e', f'cd "{build_dir}" && npm start; bash'],
+            ['x-terminal-emulator', '-e', f'cd "{build_dir}" && npm start; bash']
+        ]
+        
+        for cmd in terminal_commands:
+            try:
+                subprocess.Popen(cmd)
+                break
+            except FileNotFoundError:
+                continue
+        else:
+            print("Could not find a suitable terminal emulator. Please run 'npm start' manually in the build directory.")
+
 def run_uvicorn(port=8000):
     """Run Uvicorn server with a specific port and hot-reload enabled."""
     try:
@@ -44,14 +74,71 @@ def run_uvicorn(port=8000):
                 return  # Exit early, preventing further execution
 
         print(f"Starting Uvicorn on port {port}...")
+        
+        # Change to app directory before running uvicorn
+        app_dir = os.path.join(os.getcwd(), 'app')
+        if os.path.exists(app_dir):
+            os.chdir(app_dir)
+        
         subprocess.Popen(["uvicorn", "app:app", "--reload", "--port", str(port)])
         
-        url = f"http://localhost:{port}"
-        print(f"Opening {url} in your default browser")
-        webbrowser.open(url)
 
     except subprocess.CalledProcessError as e:
         print(f"An error occurred while running Uvicorn: {e}")
+
+def run_command_logic(port=8000):
+    """Handle the run command logic based on directory structure and settings."""
+    current_dir = os.getcwd()
+    build_dir = os.path.join(current_dir, 'build')
+    app_dir = os.path.join(current_dir, 'app')
+    
+    # Check if build directory exists
+    if not os.path.exists(build_dir):
+        # No build directory, just run uvicorn in app directory
+        print("No build directory found. Running uvicorn in app directory...")
+        run_uvicorn(port)
+        return
+    
+    # Build directory exists, check settings from the app directory
+    try:
+        # Use importlib to dynamically import settings from the app directory
+        import importlib.util
+        settings_path = os.path.join(app_dir, 'settings.py')
+        
+        if not os.path.exists(settings_path):
+            print("No settings.py found in app directory. Running uvicorn in app directory...")
+            run_uvicorn(port)
+            return
+        
+        spec = importlib.util.spec_from_file_location("app_settings", settings_path)
+        settings = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(settings)
+        
+        # Check if BACKEND attribute exists and get its value
+        backend_enabled = getattr(settings, 'BACKEND', True)  # Default to True if not found
+        
+        if not backend_enabled:
+            # Backend is False, only run npm start in build directory
+            print("Backend is disabled. Running npm start in build directory...")
+            os.chdir(build_dir)
+            subprocess.run(["npm", "start"])
+        else:
+            # Backend is True, run both npm start (in new terminal) and uvicorn
+            print("Backend is enabled. Starting both frontend and backend...")
+            
+            # Open new terminal and run npm start
+            open_new_terminal_and_run_npm(build_dir)
+            
+            # Run uvicorn in app directory in current terminal
+            os.chdir(app_dir)
+            run_uvicorn(port)
+    
+    except ImportError:
+        print("Could not import settings from app directory. Running uvicorn in app directory...")
+        run_uvicorn(port)
+    except Exception as e:
+        print(f"Error checking settings: {e}. Running uvicorn in app directory...")
+        run_uvicorn(port)
 
 def create_app_directory(name, api_only=False):
     """Create a new application directory using templates."""
@@ -126,7 +213,7 @@ def main():
         else:
             print(f"Please provide a name for the new app. Usage: '{FRAMEWORK_NAME.lower()} new <name>'")
     elif args.command == "run":
-        run_uvicorn(port=args.port)
+        run_command_logic(port=args.port)
     else:
         print(f"Invalid command. Use '{FRAMEWORK_NAME.lower()} new <name>' to create a new app or '{FRAMEWORK_NAME.lower()} run' to run the development server.")
 

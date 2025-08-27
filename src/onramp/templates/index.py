@@ -1,6 +1,9 @@
-from psx_syntax import psx_import, packed
-import os
-from pathlib import Path
-from framework.conf import settings
+from starlette.responses import JSONResponse
 
-components_path = Path(settings.BASE_DIR) / 'app' / 'components'
+async def index(request):
+    """Handler for the root path /"""
+    return JSONResponse({"message": "Hello World", "status": "API is running"})
+
+# You can add more handlers in the same file if needed
+async def health(request):
+    return JSONResponse({"status": "healthy"})
