@@ -175,10 +175,16 @@ def create_app_directory(name, api_only=False):
         master_models = importlib.resources.files(TEMPLATES_MODULE) / 'models.py'
         shutil.copyfile(master_models, new_models_path)
 
-        routes_dir = os.path.join(backend_dir, 'routes')
+        # Create the routes directory structure inside app/
+        routes_dir = os.path.join(backend_dir, 'routes')  # Inside app directory
         os.makedirs(routes_dir, exist_ok=True)
 
-        new_index_path = os.path.join(routes_dir, 'index.py')
+        # Create routes/api directory for API endpoints
+        api_dir = os.path.join(routes_dir, 'api')
+        os.makedirs(api_dir, exist_ok=True)
+
+        # Create the initial API route file
+        new_index_path = os.path.join(api_dir, 'index.py')
         master_index = importlib.resources.files(TEMPLATES_MODULE) / 'index.py'
         shutil.copyfile(master_index, new_index_path)
 
