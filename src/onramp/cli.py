@@ -12,6 +12,8 @@ import sys
 import atexit
 from .rn_app import create_react_native_app
 
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.getcwd(), '.pycache')
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 config_path = os.path.join(script_dir, "config.toml")
 
