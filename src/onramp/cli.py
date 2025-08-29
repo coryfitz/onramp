@@ -193,30 +193,47 @@ def create_app_directory(name, api_only=False):
 
 def main():
     """CLI entry point."""
-    # Create an argument parser
-    parser = argparse.ArgumentParser(description=F"{FRAMEWORK_NAME} App Generator and Runner")
+    # Store and preserve original directory
+    original_cwd = os.getcwd()
     
-    # Add 'new' and 'run' commands
-    parser.add_argument("command", help="The command to run (e.g., new or run)")
-    parser.add_argument("name", nargs='?', help="The name of the app directory to be created (for 'new' command)")
-    parser.add_argument("--port", type=int, help="The port to run the development server on (for 'run' command)", default=8000)
-    parser.add_argument("--api", action="store_true", help="Create API-only app without React Native frontend (for 'new' command)")
+    try:
+        # Create an argument parser
+        parser = argparse.ArgumentParser(description=F"{FRAMEWORK_NAME} App Generator and Runner")
+        
+        # Add 'new' and 'run' commands
+        parser.add_argument("command", help="The command to run (e.g., new or run)")
+        parser.add_argument("name", nargs='?', help="The name of the app directory to be created (for 'new' command)")
+        parser.add_argument("--port", type=int, help="The port to run the development server on (for 'run' command)", default=8000)
+        parser.add_argument("--api", action="store_true", help="Create API-only app without React Native frontend (for 'new' command)")
 
-    # Parse the arguments
-    args = parser.parse_args()
+        # Parse the arguments
+        args = parser.parse_args()
 
-    # Check which command is provided
-    if args.command == "new":
-        if args.name:
-            create_app_directory(args.name, api_only=args.api)
-            if not args.api:
-                create_react_native_app(args.name)
+        # Check which command is provided
+        if args.command == "new":
+            if args.name:
+                create_app_directory(args.name, api_only=args.api)
+                if not args.api:
+                    # Ensure we're in the original directory and stay there
+                    os.chdir(original_cwd)
+                    create_react_native_app(args.name)
+            else:
+                print(f"Please provide a name for the new app. Usage: '{FRAMEWORK_NAME.lower()} new <name>'")
+        elif args.command == "run":
+            run_command_logic(port=args.port)
         else:
-            print(f"Please provide a name for the new app. Usage: '{FRAMEWORK_NAME.lower()} new <name>'")
-    elif args.command == "run":
-        run_command_logic(port=args.port)
-    else:
-        print(f"Invalid command. Use '{FRAMEWORK_NAME.lower()} new <name>' to create a new app or '{FRAMEWORK_NAME.lower()} run' to run the development server.")
-
+            print(f"Invalid command. Use '{FRAMEWORK_NAME.lower()} new <name>' to create a new app or '{FRAMEWORK_NAME.lower()} run' to run the development server.")
+    
+    finally:
+        # Always return to original directory
+        try:
+            os.chdir(original_cwd)
+        except (FileNotFoundError, OSError):
+            # If original directory no longer exists, go to parent
+            try:
+                os.chdir(os.path.dirname(original_cwd))
+            except (FileNotFoundError, OSError):
+                # Last resort - go to home directory
+                os.chdir(os.path.expanduser("~"))
 if __name__ == "__main__":
     main()
