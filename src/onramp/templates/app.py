@@ -1,4 +1,4 @@
-# framework.py - OnRamp: An Async-by-Default Web Framework
+# app.py - OnRamp: An Async-by-Default Web Framework
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.responses import JSONResponse
@@ -26,10 +26,12 @@ class OnRamp:
         
     def discover_file_routes(self):
         """Discover route handlers from files in the app/routes/api directory"""
-        api_dir = os.path.join(os.getcwd(), 'app', 'routes', 'api')
+        # Get the directory where this app.py file is located
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        api_dir = os.path.join(current_dir, 'routes', 'api')
         
         if not os.path.exists(api_dir):
-            print("No app/routes/api directory found")
+            print(f"No routes/api directory found at {api_dir}")
             return
         
         for filename in os.listdir(api_dir):
@@ -68,30 +70,40 @@ class OnRamp:
     def _make_async_handler(self, handler_func):
         """Convert a sync handler to async, or wrap async handler safely"""
         
+        # Get the function signature to determine what parameters it expects
+        sig = inspect.signature(handler_func)
+        param_count = len(sig.parameters)
+        
         # Check if explicitly marked as sync
         if getattr(handler_func, '_onramp_sync', False):
             # Wrap sync function to run in thread pool
             @wraps(handler_func)
             async def sync_wrapper(request, params=None):
                 loop = asyncio.get_event_loop()
-                if params is not None:
-                    result = await loop.run_in_executor(None, lambda: handler_func(request, params))
-                else:
-                    result = await loop.run_in_executor(None, lambda: handler_func(request))
                 
-                # Auto-convert responses like Flask
+                # Call with appropriate number of arguments
+                if param_count == 0:
+                    result = await loop.run_in_executor(None, lambda: handler_func())
+                elif param_count == 1:
+                    result = await loop.run_in_executor(None, lambda: handler_func(request))
+                else:
+                    result = await loop.run_in_executor(None, lambda: handler_func(request, params))
+                
                 return self._convert_response(result)
             return sync_wrapper
         
         # Check if already async
         if inspect.iscoroutinefunction(handler_func):
-            # Already async, just wrap with JSON conversion
+            # Already async, just wrap with response conversion
             @wraps(handler_func)
             async def async_wrapper(request, params=None):
-                if params is not None:
-                    result = await handler_func(request, params)
-                else:
+                # Call with appropriate number of arguments
+                if param_count == 0:
+                    result = await handler_func()
+                elif param_count == 1:
                     result = await handler_func(request)
+                else:
+                    result = await handler_func(request, params)
                 
                 return self._convert_response(result)
             return async_wrapper
@@ -101,10 +113,14 @@ class OnRamp:
         async def default_async_wrapper(request, params=None):
             # Run sync function in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
-            if params is not None:
-                result = await loop.run_in_executor(None, lambda: handler_func(request, params))
-            else:
+            
+            # Call with appropriate number of arguments
+            if param_count == 0:
+                result = await loop.run_in_executor(None, lambda: handler_func())
+            elif param_count == 1:
                 result = await loop.run_in_executor(None, lambda: handler_func(request))
+            else:
+                result = await loop.run_in_executor(None, lambda: handler_func(request, params))
             
             return self._convert_response(result)
         return default_async_wrapper
@@ -120,17 +136,17 @@ class OnRamp:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             
-            # Determine the route path from filename
+            # Determine the route path from filename with /api prefix
             if module_name == 'index':
-                route_path = "/"
+                route_path = "/api"
             else:
-                route_path = f"/{module_name}"
+                route_path = f"/api/{module_name}"
             
             # Check for dynamic route (contains brackets)
             if '[' in module_name and ']' in module_name:
                 # Convert [id] to {id} for Starlette path parameters
                 route_path = module_name.replace('[', '{').replace(']', '}')
-                route_path = f"/{route_path}"
+                route_path = f"/api/{route_path}"
             
             # Find HTTP method handlers in the module
             supported_methods = []
@@ -187,104 +203,14 @@ class OnRamp:
     def create_app(self):
         """Create the Starlette application"""
         self.discover_file_routes()
-        return Starlette(routes=self.routes)# framework.py - Your custom framework
-from starlette.applications import Starlette
-from starlette.routing import Route
-from starlette.responses import JSONResponse
-import os
-import importlib.util
-import inspect
-from typing import List
-
-class OnRamp:
-    def __init__(self):
-        self.routes: List[Route] = []
-        
-    def discover_file_routes(self):
-        """Discover routes from files in the routes directory"""
-        routes_dir = os.path.join(os.getcwd(), 'routes')
-        
-        if not os.path.exists(routes_dir):
-            print("No routes directory found")
-            return
-        
-        for filename in os.listdir(routes_dir):
-            if filename.endswith('.py') and not filename.startswith('__'):
-                self._load_route_file(filename, routes_dir)
-    
-    def _load_route_file(self, filename, routes_dir):
-        """Load a single route file and register its handlers"""
-        module_name = filename[:-3]  # Remove .py extension
-        file_path = os.path.join(routes_dir, filename)
-        
-        try:
-            # Dynamically import the module
-            spec = importlib.util.spec_from_file_location(module_name, file_path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            
-            # Determine the route path from filename
-            if module_name == 'index':
-                route_path = "/"
-            else:
-                route_path = f"/{module_name}"
-            
-            # Check for dynamic route (contains brackets)
-            if '[' in module_name and ']' in module_name:
-                # Convert [id] to {id} for Starlette path parameters
-                route_path = module_name.replace('[', '{').replace(']', '}')
-                route_path = f"/{route_path}"
-            
-            # Find HTTP method handlers in the module
-            supported_methods = []
-            handlers = {}
-            
-            for method in ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']:
-                method_lower = method.lower()
-                if hasattr(module, method_lower):
-                    handler_func = getattr(module, method_lower)
-                    if callable(handler_func):
-                        supported_methods.append(method)
-                        handlers[method] = handler_func
-            
-            if handlers:
-                # Create a unified handler that routes to appropriate method
-                async def unified_handler(request):
-                    method = request.method
-                    if method in handlers:
-                        handler = handlers[method]
-                        
-                        # Prepare parameters
-                        params = request.path_params if request.path_params else {}
-                        
-                        # Check if handler expects params argument
-                        sig = inspect.signature(handler)
-                        if len(sig.parameters) >= 2:
-                            # Handler expects (request, params)
-                            result = await handler(request, params)
-                        else:
-                            # Handler only expects (request)
-                            result = await handler(request)
-                        
-                        # Auto-convert dict responses to JSON
-                        if isinstance(result, dict):
-                            return JSONResponse(result)
-                        return result
-                    else:
-                        return JSONResponse(
-                            {"error": f"Method {method} not allowed"}, 
-                            status_code=405
-                        )
-                
-                self.routes.append(Route(route_path, unified_handler, methods=supported_methods))
-                print(f"Registered route: {route_path} -> {filename} [{', '.join(supported_methods)}]")
-            else:
-                print(f"Warning: No HTTP method handlers found in {filename}")
-                
-        except Exception as e:
-            print(f"Error loading route from {filename}: {e}")
-    
-    def create_app(self):
-        """Create the Starlette application"""
-        self.discover_file_routes()
         return Starlette(routes=self.routes)
+
+# Create your OnRamp app instance
+onramp = OnRamp()
+
+# Create the ASGI app (this will auto-discover routes from routes/api/)
+app = onramp.create_app()
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)

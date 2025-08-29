@@ -6,7 +6,6 @@ import subprocess
 import socket
 import tomllib
 import importlib.resources
-import webbrowser
 import platform
 from .rn_app import create_react_native_app
 
