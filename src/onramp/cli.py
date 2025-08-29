@@ -7,6 +7,9 @@ import socket
 import tomllib
 import importlib.resources
 import platform
+import signal
+import sys
+import atexit
 from .rn_app import create_react_native_app
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +20,33 @@ with open(config_path, "rb") as f:  # "rb" required for tomllib
     FRAMEWORK_NAME = config['framework_name']
 
 MODULE_NAME = FRAMEWORK_NAME.lower()
+
+# Global list to track spawned processes for cleanup
+spawned_processes = []
+
+def cleanup_processes():
+    """Clean up all spawned processes"""
+    global spawned_processes
+    for process in spawned_processes:
+        try:
+            if process.poll() is None:  # Process is still running
+                print(f"Terminating process {process.pid}...")
+                process.terminate()
+                # Wait a bit for graceful shutdown
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    # Force kill if it doesn't terminate gracefully
+                    process.kill()
+        except:
+            pass  # Process might already be dead
+    spawned_processes.clear()
+
+def signal_handler(signum, frame):
+    """Handle Ctrl+C and other signals"""
+    print("\nReceived interrupt signal. Cleaning up...")
+    cleanup_processes()
+    sys.exit(0)
 
 def is_port_in_use(port):
     """Check if a port is already in use."""
@@ -32,17 +62,20 @@ def find_next_available_port(starting_port=8000):
 
 def open_new_terminal_and_run_npm(build_dir):
     """Open a new terminal window and run npm start in the build directory."""
+    global spawned_processes
+    
     system = platform.system()
     
     if system == "Windows":
         # Windows
-        subprocess.Popen(['start', 'cmd', '/k', f'cd /d "{build_dir}" && npm start'], shell=True)
+        process = subprocess.Popen(['start', 'cmd', '/k', f'cd /d "{build_dir}" && npm start'], shell=True)
+        spawned_processes.append(process)
     elif system == "Darwin":
         # macOS
-        subprocess.Popen(['osascript', '-e', f'tell application "Terminal" to do script "cd \\"{build_dir}\\" && npm start"'])
+        process = subprocess.Popen(['osascript', '-e', f'tell application "Terminal" to do script "cd \\"{build_dir}\\" && npm start"'])
+        spawned_processes.append(process)
     else:
         # Linux and other Unix-like systems
-        # Try common terminal emulators
         terminal_commands = [
             ['gnome-terminal', '--', 'bash', '-c', f'cd "{build_dir}" && npm start; exec bash'],
             ['xterm', '-e', f'cd "{build_dir}" && npm start; bash'],
@@ -52,7 +85,8 @@ def open_new_terminal_and_run_npm(build_dir):
         
         for cmd in terminal_commands:
             try:
-                subprocess.Popen(cmd)
+                process = subprocess.Popen(cmd)
+                spawned_processes.append(process)
                 break
             except FileNotFoundError:
                 continue
@@ -61,6 +95,8 @@ def open_new_terminal_and_run_npm(build_dir):
 
 def run_uvicorn(port=8000):
     """Run Uvicorn server with a specific port and hot-reload enabled."""
+    global spawned_processes
+    
     try:
         if is_port_in_use(port):
             print(f"Port {port} is already in use.")
@@ -70,7 +106,7 @@ def run_uvicorn(port=8000):
                 print(f"Using port {port} instead.")
             else:
                 print("User declined to use another port. Exiting.")
-                return  # Exit early, preventing further execution
+                return
 
         print(f"Starting Uvicorn on port {port}...")
         
@@ -79,11 +115,22 @@ def run_uvicorn(port=8000):
         if os.path.exists(app_dir):
             os.chdir(app_dir)
         
-        subprocess.Popen(["uvicorn", "app:app", "--reload", "--port", str(port)])
+        # Start uvicorn process and track it
+        process = subprocess.Popen(["uvicorn", "app:app", "--reload", "--port", str(port)])
+        spawned_processes.append(process)
         
+        # Wait for the process to complete
+        try:
+            process.wait()
+        except KeyboardInterrupt:
+            print("\nShutting down uvicorn...")
+            cleanup_processes()
 
     except subprocess.CalledProcessError as e:
         print(f"An error occurred while running Uvicorn: {e}")
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+        cleanup_processes()
 
 def run_command_logic(port=8000):
     """Handle the run command logic based on directory structure and settings."""
@@ -120,7 +167,13 @@ def run_command_logic(port=8000):
             # Backend is False, only run npm start in build directory
             print("Backend is disabled. Running npm start in build directory...")
             os.chdir(build_dir)
-            subprocess.run(["npm", "start"])
+            try:
+                process = subprocess.Popen(["npm", "start"])
+                spawned_processes.append(process)
+                process.wait()
+            except KeyboardInterrupt:
+                print("\nShutting down npm...")
+                cleanup_processes()
         else:
             # Backend is True, run both npm start (in new terminal) and uvicorn
             print("Backend is enabled. Starting both frontend and backend...")
@@ -193,6 +246,13 @@ def create_app_directory(name, api_only=False):
 
 def main():
     """CLI entry point."""
+    # Set up signal handlers for cleanup
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Register cleanup function to run on exit
+    atexit.register(cleanup_processes)
+    
     # Store and preserve original directory
     original_cwd = os.getcwd()
     
@@ -224,6 +284,10 @@ def main():
         else:
             print(f"Invalid command. Use '{FRAMEWORK_NAME.lower()} new <name>' to create a new app or '{FRAMEWORK_NAME.lower()} run' to run the development server.")
     
+    except KeyboardInterrupt:
+        print("\nInterrupted by user")
+        cleanup_processes()
+        sys.exit(0)
     finally:
         # Always return to original directory
         try:
@@ -235,5 +299,6 @@ def main():
             except (FileNotFoundError, OSError):
                 # Last resort - go to home directory
                 os.chdir(os.path.expanduser("~"))
+
 if __name__ == "__main__":
     main()
