@@ -1,227 +1,215 @@
-import argparse
-import importlib
+from starlette.applications import Starlette
+from starlette.routing import Route
+from starlette.responses import JSONResponse
 import os
-import shutil
-import subprocess
-import socket
-import tomllib
-import importlib.resources
-import webbrowser
-import platform
-from .rn_app import create_react_native_app
+import importlib.util
+import inspect
+import asyncio
+from functools import wraps
+from typing import List
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-config_path = os.path.join(script_dir, "config.toml")
+def sync(func):
+    """Decorator to mark a function as intentionally synchronous"""
+    func._onramp_sync = True
+    return func
 
-with open(config_path, "rb") as f:  # "rb" required for tomllib
-    config = tomllib.load(f)
-    FRAMEWORK_NAME = config['framework_name']
-
-MODULE_NAME = FRAMEWORK_NAME.lower()
-
-def is_port_in_use(port):
-    """Check if a port is already in use."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        return sock.connect_ex(('localhost', port)) == 0
-
-def find_next_available_port(starting_port=8000):
-    """Find the next available port starting from the specified port."""
-    port = starting_port
-    while is_port_in_use(port):
-        port += 1
-    return port
-
-def open_new_terminal_and_run_npm(build_dir):
-    """Open a new terminal window and run npm start in the build directory."""
-    system = platform.system()
+class OnRamp:
+    """
+    OnRamp is an async-by-default web framework.
+    All route handlers are automatically treated as async, even if defined with 'def'.
+    Use @sync decorator for intentionally synchronous handlers.
+    """
     
-    if system == "Windows":
-        # Windows
-        subprocess.Popen(['start', 'cmd', '/k', f'cd /d "{build_dir}" && npm start'], shell=True)
-    elif system == "Darwin":
-        # macOS
-        subprocess.Popen(['osascript', '-e', f'tell application "Terminal" to do script "cd \\"{build_dir}\\" && npm start"'])
-    else:
-        # Linux and other Unix-like systems
-        # Try common terminal emulators
-        terminal_commands = [
-            ['gnome-terminal', '--', 'bash', '-c', f'cd "{build_dir}" && npm start; exec bash'],
-            ['xterm', '-e', f'cd "{build_dir}" && npm start; bash'],
-            ['konsole', '-e', f'cd "{build_dir}" && npm start; bash'],
-            ['x-terminal-emulator', '-e', f'cd "{build_dir}" && npm start; bash']
-        ]
+    def __init__(self):
+        self.routes: List[Route] = []
         
-        for cmd in terminal_commands:
-            try:
-                subprocess.Popen(cmd)
-                break
-            except FileNotFoundError:
-                continue
-        else:
-            print("Could not find a suitable terminal emulator. Please run 'npm start' manually in the build directory.")
-
-def run_uvicorn(port=8000):
-    """Run Uvicorn server with a specific port and hot-reload enabled."""
-    try:
-        if is_port_in_use(port):
-            print(f"Port {port} is already in use.")
-            response = input(f"Do you want to use the next available port (starting from {port + 1})? (y/n): ").strip().lower()
-            if response == 'y':
-                port = find_next_available_port(port + 1)
-                print(f"Using port {port} instead.")
-            else:
-                print("User declined to use another port. Exiting.")
-                return  # Exit early, preventing further execution
-
-        print(f"Starting Uvicorn on port {port}...")
+    def discover_file_routes(self):
+        """Discover route handlers from files in the app/routes/api directory"""
+        # Get the directory where this app.py file is located
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        api_dir = os.path.join(current_dir, 'routes', 'api')
         
-        # Change to app directory before running uvicorn
-        app_dir = os.path.join(os.getcwd(), 'app')
-        if os.path.exists(app_dir):
-            os.chdir(app_dir)
-        
-        subprocess.Popen(["uvicorn", "app:app", "--reload", "--port", str(port)])
-        
-
-    except subprocess.CalledProcessError as e:
-        print(f"An error occurred while running Uvicorn: {e}")
-
-def run_command_logic(port=8000):
-    """Handle the run command logic based on directory structure and settings."""
-    current_dir = os.getcwd()
-    build_dir = os.path.join(current_dir, 'build')
-    app_dir = os.path.join(current_dir, 'app')
-    
-    # Check if build directory exists
-    if not os.path.exists(build_dir):
-        # No build directory, just run uvicorn in app directory
-        print("No build directory found. Running uvicorn in app directory...")
-        run_uvicorn(port)
-        return
-    
-    # Build directory exists, check settings from the app directory
-    try:
-        # Use importlib to dynamically import settings from the app directory
-        import importlib.util
-        settings_path = os.path.join(app_dir, 'settings.py')
-        
-        if not os.path.exists(settings_path):
-            print("No settings.py found in app directory. Running uvicorn in app directory...")
-            run_uvicorn(port)
+        if not os.path.exists(api_dir):
+            print(f"No routes/api directory found at {api_dir}")
             return
         
-        spec = importlib.util.spec_from_file_location("app_settings", settings_path)
-        settings = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(settings)
-        
-        # Check if BACKEND attribute exists and get its value
-        backend_enabled = getattr(settings, 'BACKEND', True)  # Default to True if not found
-        
-        if not backend_enabled:
-            # Backend is False, only run npm start in build directory
-            print("Backend is disabled. Running npm start in build directory...")
-            os.chdir(build_dir)
-            subprocess.run(["npm", "start"])
-        else:
-            # Backend is True, run both npm start (in new terminal) and uvicorn
-            print("Backend is enabled. Starting both frontend and backend...")
-            
-            # Open new terminal and run npm start
-            open_new_terminal_and_run_npm(build_dir)
-            
-            # Run uvicorn in app directory in current terminal
-            os.chdir(app_dir)
-            run_uvicorn(port)
+        for filename in os.listdir(api_dir):
+            if filename.endswith('.py') and not filename.startswith('__'):
+                self._load_route_file(filename, api_dir)
     
-    except ImportError:
-        print("Could not import settings from app directory. Running uvicorn in app directory...")
-        run_uvicorn(port)
-    except Exception as e:
-        print(f"Error checking settings: {e}. Running uvicorn in app directory...")
-        run_uvicorn(port)
-
-def create_app_directory(name, api_only=False):
-    """Create a new application directory using templates."""
-    directory_path = os.path.join(os.getcwd(), name)
-
-    if os.path.exists(directory_path):
-        print('app name already exists at this directory')
-        return  # Exit early if the directory already exists
-
-    try:
-        os.makedirs(directory_path, exist_ok=True)
-
-        TEMPLATES_MODULE = importlib.import_module(f"{MODULE_NAME}.templates")
-
-        backend_dir = os.path.join(directory_path, 'app')
-        os.makedirs(backend_dir, exist_ok=True)
-
-        new_settings_path = os.path.join(backend_dir, 'settings.py')
-        master_settings = importlib.resources.files(TEMPLATES_MODULE) / 'settings.py'
-        shutil.copyfile(master_settings, new_settings_path)
-
-        new_main_path = os.path.join(backend_dir, 'main.py')
-        master_main = importlib.resources.files(TEMPLATES_MODULE) / 'main.py'
-        shutil.copyfile(master_main, new_main_path)
-
-        new_app_path = os.path.join(backend_dir, 'app.py')
-        master_app = importlib.resources.files(TEMPLATES_MODULE) / 'app.py'
-        shutil.copyfile(master_app, new_app_path)
-
-        models_dir = os.path.join(backend_dir, 'models')
-        os.makedirs(models_dir, exist_ok=True)
-
-        new_models_path = os.path.join(models_dir, 'models.py')
-        master_models = importlib.resources.files(TEMPLATES_MODULE) / 'models.py'
-        shutil.copyfile(master_models, new_models_path)
-
-        # Create the routes directory structure inside app/
-        routes_dir = os.path.join(backend_dir, 'routes')  # Inside app directory
-        os.makedirs(routes_dir, exist_ok=True)
-
-        # Create routes/api directory for API endpoints
-        api_dir = os.path.join(routes_dir, 'api')
-        os.makedirs(api_dir, exist_ok=True)
-
-        # Create the initial API route file
-        new_index_path = os.path.join(api_dir, 'index.py')
-        master_index = importlib.resources.files(TEMPLATES_MODULE) / 'index.py'
-        shutil.copyfile(master_index, new_index_path)
-
-        if api_only:
-            print(f"Created a new {FRAMEWORK_NAME} API-only app at {directory_path}")
+    def _convert_response(self, result):
+        """Convert Python returns to appropriate HTTP responses (Flask-style)"""
+        from starlette.responses import PlainTextResponse, HTMLResponse
+        
+        # Return Response objects as-is
+        if hasattr(result, 'status_code'):
+            return result
+            
+        # Convert common Python types to appropriate responses
+        if isinstance(result, dict):
+            return JSONResponse(result)
+        elif isinstance(result, str):
+            # Check if it looks like HTML
+            if result.strip().startswith('<') and result.strip().endswith('>'):
+                return HTMLResponse(result)
+            else:
+                return PlainTextResponse(result)
+        elif isinstance(result, (list, tuple)):
+            # Convert lists/tuples to JSON
+            return JSONResponse(result)
+        elif isinstance(result, (int, float, bool)):
+            # Convert primitives to JSON
+            return JSONResponse(result)
+        elif result is None:
+            return PlainTextResponse("")
         else:
-            print(f"Created a new {FRAMEWORK_NAME} app at {directory_path}")
-
-    except Exception as e:
-        print(f"An error occurred while creating the directory: {e}")
-
-def main():
-    """CLI entry point."""
-    # Create an argument parser
-    parser = argparse.ArgumentParser(description=F"{FRAMEWORK_NAME} App Generator and Runner")
+            # Fallback: convert to string
+            return PlainTextResponse(str(result))
     
-    # Add 'new' and 'run' commands
-    parser.add_argument("command", help="The command to run (e.g., new or run)")
-    parser.add_argument("name", nargs='?', help="The name of the app directory to be created (for 'new' command)")
-    parser.add_argument("--port", type=int, help="The port to run the development server on (for 'run' command)", default=8000)
-    parser.add_argument("--api", action="store_true", help="Create API-only app without React Native frontend (for 'new' command)")
+    def _make_async_handler(self, handler_func):
+        """Convert a sync handler to async, or wrap async handler safely"""
+        
+        # Get the function signature to determine what parameters it expects
+        sig = inspect.signature(handler_func)
+        param_count = len(sig.parameters)
+        
+        # Check if explicitly marked as sync
+        if getattr(handler_func, '_onramp_sync', False):
+            # Wrap sync function to run in thread pool
+            @wraps(handler_func)
+            async def sync_wrapper(request, params=None):
+                loop = asyncio.get_event_loop()
+                
+                # Call with appropriate number of arguments
+                if param_count == 0:
+                    result = await loop.run_in_executor(None, lambda: handler_func())
+                elif param_count == 1:
+                    result = await loop.run_in_executor(None, lambda: handler_func(request))
+                else:
+                    result = await loop.run_in_executor(None, lambda: handler_func(request, params))
+                
+                return self._convert_response(result)
+            return sync_wrapper
+        
+        # Check if already async
+        if inspect.iscoroutinefunction(handler_func):
+            # Already async, just wrap with response conversion
+            @wraps(handler_func)
+            async def async_wrapper(request, params=None):
+                # Call with appropriate number of arguments
+                if param_count == 0:
+                    result = await handler_func()
+                elif param_count == 1:
+                    result = await handler_func(request)
+                else:
+                    result = await handler_func(request, params)
+                
+                return self._convert_response(result)
+            return async_wrapper
+        
+        # Regular function - make it async by default
+        @wraps(handler_func)
+        async def default_async_wrapper(request, params=None):
+            # Run sync function in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            
+            # Call with appropriate number of arguments
+            if param_count == 0:
+                result = await loop.run_in_executor(None, lambda: handler_func())
+            elif param_count == 1:
+                result = await loop.run_in_executor(None, lambda: handler_func(request))
+            else:
+                result = await loop.run_in_executor(None, lambda: handler_func(request, params))
+            
+            return self._convert_response(result)
+        return default_async_wrapper
+    
+    def _load_route_file(self, filename, api_dir):
+        """Load a single route file and register its handlers"""
+        module_name = filename[:-3]  # Remove .py extension
+        file_path = os.path.join(api_dir, filename)
+        
+        try:
+            # Dynamically import the module
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            
+            # Determine the route path from filename with /api prefix
+            if module_name == 'index':
+                route_path = "/api"
+            else:
+                route_path = f"/api/{module_name}"
+            
+            # Check for dynamic route (contains brackets)
+            if '[' in module_name and ']' in module_name:
+                # Convert [id] to {id} for Starlette path parameters
+                route_path = module_name.replace('[', '{').replace(']', '}')
+                route_path = f"/api/{route_path}"
+            
+            # Find HTTP method handlers in the module
+            supported_methods = []
+            handlers = {}
+            
+            for method in ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']:
+                method_lower = method.lower()
+                if hasattr(module, method_lower):
+                    handler_func = getattr(module, method_lower)
+                    if callable(handler_func):
+                        supported_methods.append(method)
+                        # Convert to async handler
+                        handlers[method] = self._make_async_handler(handler_func)
+            
+            if handlers:
+                # Create a unified handler that routes to appropriate method
+                async def unified_handler(request):
+                    method = request.method
+                    if method in handlers:
+                        handler = handlers[method]
+                        
+                        # Prepare parameters
+                        params = request.path_params if request.path_params else {}
+                        
+                        # All handlers are now async, so we can always await
+                        return await handler(request, params)
+                    else:
+                        return JSONResponse(
+                            {"error": f"Method {method} not allowed"}, 
+                            status_code=405
+                        )
+                
+                self.routes.append(Route(route_path, unified_handler, methods=supported_methods))
+                
+                # Show which handlers are sync vs async for debugging
+                handler_info = []
+                for method in supported_methods:
+                    method_lower = method.lower()
+                    original_handler = getattr(module, method_lower)
+                    if getattr(original_handler, '_onramp_sync', False):
+                        handler_info.append(f"{method}(sync)")
+                    elif inspect.iscoroutinefunction(original_handler):
+                        handler_info.append(f"{method}(async)")
+                    else:
+                        handler_info.append(f"{method}(auto-async)")
+                
+                print(f"Registered route: {route_path} -> {filename} [{', '.join(handler_info)}]")
+            else:
+                print(f"Warning: No HTTP method handlers found in {filename}")
+                
+        except Exception as e:
+            print(f"Error loading route from {filename}: {e}")
+    
+    def create_app(self):
+        """Create the Starlette application"""
+        self.discover_file_routes()
+        return Starlette(routes=self.routes)
 
-    # Parse the arguments
-    args = parser.parse_args()
+# Create your OnRamp app instance
+onramp = OnRamp()
 
-    # Check which command is provided
-    if args.command == "new":
-        if args.name:
-            create_app_directory(args.name, api_only=args.api)
-            if not args.api:
-                create_react_native_app(args.name)
-        else:
-            print(f"Please provide a name for the new app. Usage: '{FRAMEWORK_NAME.lower()} new <name>'")
-    elif args.command == "run":
-        run_command_logic(port=args.port)
-    else:
-        print(f"Invalid command. Use '{FRAMEWORK_NAME.lower()} new <name>' to create a new app or '{FRAMEWORK_NAME.lower()} run' to run the development server.")
+# Create the ASGI app (this will auto-discover routes from routes/api/)
+app = onramp.create_app()
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
