@@ -221,7 +221,7 @@ def create_web_files(project_dir):
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-    <title>React Native + React Strict DOM</title>
+    <title>OnRamp App</title>
   </head>
   <body>
     <div id="react-strict-dom-root"></div>
@@ -273,13 +273,6 @@ def create_readme(project_dir, app_name):
 
 React Native app with React Strict DOM using Metro bundler.
 
-## Features
-
-- 🚀 **React Strict DOM**: Universal components for native and web
-- 📱 **React Native**: Cross-platform mobile development
-- ⚡ **Metro**: React Native's optimized bundler
-- 🎯 **Plugin Ready**: Perfect for Tailwind → StyleX conversion
-
 ## Development
 
 ```bash
@@ -297,7 +290,6 @@ npm run web        # Run on web
 ### For iOS (macOS only):
 - Xcode + iOS Simulator + CocoaPods
 
-Happy coding! 🎉
 '''
     with open(project_dir / "README.md", "w") as f:
         f.write(readme_content)
@@ -336,7 +328,7 @@ def create_react_native_app(app_name, output_dir="."):
         print(f"   cd {app_name}/build && npm install --legacy-peer-deps")
     
     print(f"""
-🎉 React Native + React Strict DOM app created successfully!
+OnRamp frontend created
 
 Next steps:
 1. cd {app_name}/build
@@ -344,7 +336,6 @@ Next steps:
 3. npm run android               # Run on Android
 4. npm run ios                   # Run on iOS
 
-The app uses html.div, html.button elements that work on both native and web!
 """)
 
 def main():
