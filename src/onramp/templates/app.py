@@ -1,4 +1,3 @@
-# app.py - OnRamp: An Async-by-Default Web Framework
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.responses import JSONResponse
@@ -8,6 +7,7 @@ import inspect
 import asyncio
 from functools import wraps
 from typing import List
+
 
 def sync(func):
     """Decorator to mark a function as intentionally synchronous"""
