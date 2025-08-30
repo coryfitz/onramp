@@ -1,3 +1,6 @@
+import sys
+sys.dont_write_bytecode = True
+
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.responses import JSONResponse
@@ -21,18 +24,58 @@ class OnRamp:
     Use @sync decorator for intentionally synchronous handlers.
     """
     
-    def __init__(self):
+    def __init__(self, app_dir=None):
         self.routes: List[Route] = []
+        # Allow explicit app_dir to be passed, otherwise discover it
+        self.app_dir = app_dir or self._find_app_directory()
+        
+    def _find_app_directory(self):
+        """Find the app directory, checking common locations"""
+        current_dir = os.getcwd()
+        
+        # Case 1: We're running from the project root (myapp/)
+        # Look for myapp/app/
+        app_dir_from_root = os.path.join(current_dir, 'app')
+        if os.path.exists(app_dir_from_root) and os.path.exists(os.path.join(app_dir_from_root, 'api')):
+            return app_dir_from_root
+            
+        # Case 2: We're running from inside the app directory (myapp/app/)
+        # In this case, current directory IS the app directory
+        if os.path.exists(os.path.join(current_dir, 'api')):
+            return current_dir
+            
+        # Case 3: Try to find it by looking at where app.py is located
+        frame = sys._getframe(1)
+        while frame:
+            frame_filename = frame.f_code.co_filename
+            if frame_filename.endswith('app.py'):
+                # Found the app.py file, its directory should be the app directory
+                app_dir_from_frame = os.path.dirname(os.path.abspath(frame_filename))
+                if os.path.exists(os.path.join(app_dir_from_frame, 'api')):
+                    return app_dir_from_frame
+            frame = frame.f_back
+        
+        # Case 4: Try parent directory (in case we're in app/ and need to go up to find app/)
+        parent_dir = os.path.dirname(current_dir)
+        app_dir_from_parent = os.path.join(parent_dir, 'app')
+        if os.path.exists(app_dir_from_parent) and os.path.exists(os.path.join(app_dir_from_parent, 'api')):
+            return app_dir_from_parent
+        
+        # Fallback: assume current directory is the app directory
+        return current_dir
         
     def discover_file_routes(self):
-        """Discover route handlers from files in the app/routes/api directory"""
-        # Get the directory where this app.py file is located
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        api_dir = os.path.join(current_dir, 'routes', 'api')
+        """Discover route handlers from files in the api directory"""
+        api_dir = os.path.join(self.app_dir, 'api')
         
         if not os.path.exists(api_dir):
-            print(f"No routes/api directory found at {api_dir}")
+            print(f"No api directory found at {api_dir}")
+            print(f"App directory: {self.app_dir}")
             return
+        
+        # Add the app directory to Python path so we can import modules
+        if self.app_dir not in sys.path:
+            sys.path.insert(0, self.app_dir)
         
         for filename in os.listdir(api_dir):
             if filename.endswith('.py') and not filename.startswith('__'):
@@ -131,10 +174,27 @@ class OnRamp:
         file_path = os.path.join(api_dir, filename)
         
         try:
+            # Create a unique module name to avoid conflicts
+            unique_module_name = f"api_{module_name}_{id(self)}"
+            
             # Dynamically import the module
-            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            spec = importlib.util.spec_from_file_location(unique_module_name, file_path)
+            if spec is None:
+                print(f"Could not create spec for {file_path}")
+                return
+                
             module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+            
+            # Add to sys.modules to make imports work correctly
+            sys.modules[unique_module_name] = module
+            
+            try:
+                spec.loader.exec_module(module)
+            except Exception as e:
+                # Clean up on failure
+                if unique_module_name in sys.modules:
+                    del sys.modules[unique_module_name]
+                raise e
             
             # Determine the route path from filename with /api prefix
             if module_name == 'index':
@@ -199,6 +259,8 @@ class OnRamp:
                 
         except Exception as e:
             print(f"Error loading route from {filename}: {e}")
+            import traceback
+            traceback.print_exc()
     
     def create_app(self):
         """Create the Starlette application"""
@@ -208,9 +270,10 @@ class OnRamp:
 # Create your OnRamp app instance
 onramp = OnRamp()
 
-# Create the ASGI app (this will auto-discover routes from routes/api/)
+# Create the ASGI app (this will auto-discover routes from app/api/)
 app = onramp.create_app()
 
+# For backward compatibility when running locally
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)

@@ -1,5 +1,5 @@
 import sys
-sys.dont_write_bytecode = True  # never write .pyc in this process
+sys.dont_write_bytecode = True
 
 import argparse
 import importlib
@@ -125,10 +125,11 @@ def open_new_terminal_and_run_npm(build_dir: str):
 # -----------------------------------------------------------------------------
 def _uvicorn_cmd(port: int):
     # -B: disable .pyc writes for the worker
+    # Use the library version of app.py instead of local app:app
     return [
         sys.executable,
         "-B",
-        "-m", "uvicorn", "app:app",
+        "-m", "uvicorn", "onramp.app:app",
         "--port", str(port),
     ]
 
@@ -240,17 +241,19 @@ def create_app_directory(name, api_only=False):
 
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'settings.py',
                         os.path.join(backend_dir, 'settings.py'))
-        shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'app.py',
-                        os.path.join(backend_dir, 'app.py'))
+        # app.py is now part of the library, no need to copy it
 
         models_dir = os.path.join(backend_dir, 'models')
         os.makedirs(models_dir, exist_ok=True)
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'models.py',
                         os.path.join(models_dir, 'models.py'))
 
-        routes_dir = os.path.join(backend_dir, 'routes')
-        os.makedirs(routes_dir, exist_ok=True)
-        api_dir = os.path.join(routes_dir, 'api')
+        # Only create routes directory if not API-only
+        if not api_only:
+            routes_dir = os.path.join(backend_dir, 'routes')
+            os.makedirs(routes_dir, exist_ok=True)
+
+        api_dir = os.path.join(backend_dir, 'api')
         os.makedirs(api_dir, exist_ok=True)
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'index.py',
                         os.path.join(api_dir, 'index.py'))
