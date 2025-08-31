@@ -197,7 +197,7 @@ def run_uvicorn_with_watch(port=8000):
 def run_command_logic(port=8000):
     """Handle the run command logic based on directory structure and settings."""
     if not os.path.exists(BUILD_DIR):
-        print("No build directory found. Running backend only...")
+        print("No build directory found. Running backend only")
         run_uvicorn_with_watch(port)
         return
 
@@ -205,7 +205,7 @@ def run_command_logic(port=8000):
         backend_enabled = getattr(settings, 'BACKEND', True)
 
         if not backend_enabled:
-            print("Backend is disabled. Running npm start in build directory...")
+            print("Backend is disabled. Running npm start in build directory")
             try:
                 p = subprocess.Popen(["npm", "start"], cwd=BUILD_DIR)
                 spawned_processes.append(p)
@@ -214,12 +214,12 @@ def run_command_logic(port=8000):
                 print("\nShutting down npm...")
                 cleanup_processes()
         else:
-            print("Backend is enabled. Starting both frontend and backend...")
+            print("Backend is enabled. Starting both frontend and backend")
             open_new_terminal_and_run_npm(BUILD_DIR)  # frontend in a new terminal
             run_uvicorn_with_watch(port)               # backend in this terminal
 
     except Exception as e:
-        print(f"Error checking settings: {e}. Running backend only...")
+        print(f"Error checking settings: {e}. Running backend only")
         run_uvicorn_with_watch(port)
 
 # -----------------------------------------------------------------------------
@@ -233,6 +233,8 @@ def create_app_directory(name, api_only=False):
         return
 
     try:
+        print(f"Creating {FRAMEWORK_NAME} {'API' if api_only else 'backend'}...")
+
         os.makedirs(directory_path, exist_ok=True)
         TEMPLATES_MODULE = importlib.import_module(f"{MODULE_NAME}.templates")
 
@@ -258,7 +260,7 @@ def create_app_directory(name, api_only=False):
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'index.py',
                         os.path.join(api_dir, 'index.py'))
 
-        print(f"Created a new {FRAMEWORK_NAME} {'API' if api_only else 'backend'} at {directory_path}")
+        print(f"{FRAMEWORK_NAME} {'API' if api_only else 'backend'} created")
     except Exception as e:
         print(f"An error occurred while creating the directory: {e}")
 

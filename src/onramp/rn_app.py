@@ -249,20 +249,18 @@ def copy_static_assets(project_dir):
     static_dir = script_dir / "static"
     
     if static_dir.exists():
-        print("Copying static assets...")
+        print("Copying static assets")
         # Copy logo.png to the project root for easy access
         logo_source = static_dir / "logo.png"
         if logo_source.exists():
             logo_dest = project_dir / "logo.png"
             shutil.copy2(logo_source, logo_dest)
-            print(f"✅ Copied {logo_source} to {logo_dest}")
         
         # Also copy to public folder for web access
         public_dir = project_dir / "public"
         if logo_source.exists():
             logo_web_dest = public_dir / "logo.png"
             shutil.copy2(logo_source, logo_web_dest)
-            print(f"✅ Copied {logo_source} to {logo_web_dest}")
     else:
         print("⚠️  Static folder not found - skipping asset copy")
         print(f"   Looking for: {static_dir}")
@@ -296,12 +294,11 @@ npm run web        # Run on web
 
 def create_react_native_app(app_name, output_dir="."):
     """Create a React Native app with React Strict DOM using Metro."""
-    print(f"Creating React Native + React Strict DOM app: {app_name}")
     
     project_dir = Path(output_dir) / app_name / "build"
     project_dir.mkdir(parents=True, exist_ok=True)
     
-    print(f"Creating project in: {project_dir}")
+    print(f"Creating OnRamp frontend...")
     
     # Create all files
     create_package_json(app_name, project_dir)
@@ -316,27 +313,14 @@ def create_react_native_app(app_name, output_dir="."):
     # Copy static assets after creating the project structure
     copy_static_assets(project_dir)
     
-    print(f"✅ Project structure created successfully!")
-    
     # Install dependencies
-    print("Installing dependencies...")
     try:
         run_command("npm install --legacy-peer-deps", cwd=project_dir)
-        print("✅ Dependencies installed successfully!")
     except subprocess.CalledProcessError:
         print("⚠️  Installation failed. Please run manually:")
         print(f"   cd {app_name}/build && npm install --legacy-peer-deps")
     
-    print(f"""
-OnRamp frontend created
-
-Next steps:
-1. cd {app_name}/build
-2. npm start                      # Start Metro bundler
-3. npm run android               # Run on Android
-4. npm run ios                   # Run on iOS
-
-""")
+    print(f"OnRamp frontend created")
 
 def main():
     parser = argparse.ArgumentParser(description="Create a React Native app with React Strict DOM")
