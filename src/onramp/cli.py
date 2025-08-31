@@ -243,14 +243,12 @@ def create_app_directory(name, api_only=False):
 
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'settings.py',
                         os.path.join(backend_dir, 'settings.py'))
-        # app.py is now part of the library, no need to copy it
 
         models_dir = os.path.join(backend_dir, 'models')
         os.makedirs(models_dir, exist_ok=True)
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'models.py',
                         os.path.join(models_dir, 'models.py'))
 
-        # Only create routes directory if not API-only
         if not api_only:
             routes_dir = os.path.join(backend_dir, 'routes')
             os.makedirs(routes_dir, exist_ok=True)
@@ -259,6 +257,9 @@ def create_app_directory(name, api_only=False):
         os.makedirs(api_dir, exist_ok=True)
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'index.py',
                         os.path.join(api_dir, 'index.py'))
+        
+        static_dir = os.path.join(backend_dir, 'static')
+        os.makedirs(static_dir, exist_ok=True)
 
         print(f"{FRAMEWORK_NAME} {'API' if api_only else 'backend'} created")
     except Exception as e:
