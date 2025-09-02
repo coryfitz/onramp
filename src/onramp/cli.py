@@ -253,13 +253,16 @@ def create_app_directory(name, api_only=False):
             routes_dir = os.path.join(backend_dir, 'routes')
             os.makedirs(routes_dir, exist_ok=True)
 
+            app_static_dir = os.path.join(backend_dir, 'static')
+            os.makedirs(app_static_dir, exist_ok=True)
+            lib_static_dir = importlib.import_module(f"{MODULE_NAME}.static")
+            shutil.copyfile(importlib.resources.files(lib_static_dir) / 'logo.png',
+                            os.path.join(app_static_dir, 'logo.png'))
+
         api_dir = os.path.join(backend_dir, 'api')
         os.makedirs(api_dir, exist_ok=True)
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'index.py',
                         os.path.join(api_dir, 'index.py'))
-        
-        static_dir = os.path.join(backend_dir, 'static')
-        os.makedirs(static_dir, exist_ok=True)
 
         print(f"{FRAMEWORK_NAME} {'API' if api_only else 'backend'} created")
     except Exception as e:
