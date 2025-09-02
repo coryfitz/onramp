@@ -3,7 +3,6 @@ Model interface for OnRamp
 """
 from tortoise.models import Model as TortoiseModel
 from tortoise import fields as tortoise_fields
-from typing import Any, Optional, Type, Dict, List
 
 class Model(TortoiseModel):
     """

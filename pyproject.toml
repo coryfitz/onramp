@@ -5,6 +5,9 @@ description = ""
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "aerich>=0.9.1",
+    "starlette>=0.47.3",
+    "tortoise>=0.1.1",
     "watchfiles>=1.1.0",
 ]
 

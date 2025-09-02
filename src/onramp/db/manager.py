@@ -6,8 +6,6 @@ import sys
 import importlib.util
 from tortoise import Tortoise
 from tortoise.contrib.starlette import register_tortoise
-from typing import Dict, Any, List
-import asyncio
 
 class DatabaseManager:
     """Manages database connections and model discovery"""

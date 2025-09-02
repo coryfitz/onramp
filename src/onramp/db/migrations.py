@@ -4,7 +4,6 @@ Migration management for OnRamp using Aerich
 import os
 import sys
 import subprocess
-import asyncio
 from typing import Optional
 from .manager import get_db_manager
 
