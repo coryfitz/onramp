@@ -11,6 +11,8 @@ import asyncio
 from functools import wraps
 from typing import List
 
+from onramp.db.manager import register_db_with_app
+
 
 def sync(func):
     """Decorator to mark a function as intentionally synchronous"""
@@ -265,7 +267,13 @@ class OnRamp:
     def create_app(self):
         """Create the Starlette application"""
         self.discover_file_routes()
-        return Starlette(routes=self.routes)
+        app = Starlette(routes=self.routes)
+        
+        # Register database with the app for auto startup/shutdown
+        register_db_with_app(app, self.app_dir)
+        
+        return app
+
 
 # Create your OnRamp app instance
 onramp = OnRamp()

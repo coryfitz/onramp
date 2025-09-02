@@ -12,8 +12,9 @@ import importlib.resources
 import platform
 import signal
 import atexit
-from types import SimpleNamespace
 from watchfiles import watch
+from .db.migrations import create_migration, migrate, init_migrations
+from .rn_app import create_react_native_app
 
 # Also set the env flag so children inherit it (uvicorn worker, etc.)
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -23,24 +24,27 @@ APP_DIR = os.path.join(PROJECT_ROOT, 'app')
 BUILD_DIR = os.path.join(PROJECT_ROOT, 'build')
 SETTINGS_PATH = os.path.join(APP_DIR, 'settings.py')
 
-def load_settings():
-    """Load app/settings.py, defaulting to BACKEND=True if not present or import fails."""
-    if not os.path.exists(SETTINGS_PATH):
-        return SimpleNamespace(BACKEND=True)
-    try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("app_settings", SETTINGS_PATH)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        if not hasattr(mod, 'BACKEND'):
-            mod.BACKEND = True
-        return mod
-    except Exception:
-        return SimpleNamespace(BACKEND=True)
+def handle_prepmigrations(args):
+    """Handle the prepmigrations command"""
+    name = args.name if hasattr(args, 'name') and args.name else None
+    success = create_migration(name)
+    if success:
+        print("Migration prepared successfully")
+    else:
+        print("Failed to prepare migration")
+        return 1
+    return 0
 
-settings = load_settings()
-
-from .rn_app import create_react_native_app
+def handle_migrate(args):
+    """Handle the migrate command (with auto-prep)"""
+    name = args.name if hasattr(args, 'name') and args.name else None
+    success = migrate(name)
+    if success:
+        print("Migration completed successfully")
+    else:
+        print("Migration failed")
+        return 1
+    return 0
 
 # -----------------------------------------------------------------------------
 # Framework config (from config.toml)
@@ -265,9 +269,25 @@ def create_app_directory(name, api_only=False):
                         os.path.join(api_dir, 'index.py'))
 
         print(f"{FRAMEWORK_NAME} {'API' if api_only else 'backend'} created")
+        
+        # Initialize database migrations as part of app setup
+        print("Setting up database migrations...")
+        original_cwd = os.getcwd()
+        try:
+            # Change to the new project directory to initialize migrations
+            os.chdir(directory_path)
+            success = init_migrations(backend_dir)
+            if success:
+                print("Database migration system ready")
+            else:
+                print("Note: Run 'onramp migrate' to complete database setup")
+        except Exception as e:
+            print(f"Note: Run 'onramp migrate' to set up database migrations")
+        finally:
+            os.chdir(original_cwd)
+            
     except Exception as e:
         print(f"An error occurred while creating the directory: {e}")
-
 # -----------------------------------------------------------------------------
 # CLI entrypoint
 # -----------------------------------------------------------------------------
@@ -279,8 +299,8 @@ def main():
     original_cwd = os.getcwd()
     try:
         parser = argparse.ArgumentParser(description=f"{FRAMEWORK_NAME} App Generator and Runner")
-        parser.add_argument("command", help="The command to run (e.g., new or run)")
-        parser.add_argument("name", nargs='?', help="The name of the app directory to be created (for 'new' command)")
+        parser.add_argument("command", help="The command to run (e.g., new, run, prepmigrations, migrate)")
+        parser.add_argument("name", nargs='?', help="The name of the app directory/migration to be created")
         parser.add_argument("--port", type=int, default=8000, help="Port for the development server")
         parser.add_argument("--api", action="store_true", help="Create API-only app without React Native frontend (for 'new' command)")
         args = parser.parse_args()
@@ -296,10 +316,23 @@ def main():
                     create_react_native_app(args.name)
             else:
                 print(f"Please provide a name for the new app. Usage: '{FRAMEWORK_NAME.lower()} new <name>'")
+                
         elif args.command == "run":
             run_command_logic(port=args.port)
+            
+        elif args.command == "prepmigrations":
+            return handle_prepmigrations(args)
+            
+        elif args.command == "migrate":
+            return handle_migrate(args)
+            
         else:
-            print(f"Invalid command. Use '{FRAMEWORK_NAME.lower()} new <name>' or '{FRAMEWORK_NAME.lower()} run'.")
+            print(f"Invalid command. Available commands:")
+            print(f"  {FRAMEWORK_NAME.lower()} new <name>           - Create new app")
+            print(f"  {FRAMEWORK_NAME.lower()} run                  - Run development server")
+            print(f"  {FRAMEWORK_NAME.lower()} prepmigrations       - Prepare database migrations")
+            print(f"  {FRAMEWORK_NAME.lower()} migrate              - Apply database migrations")
+            
     except KeyboardInterrupt:
         print("\nInterrupted by user")
         cleanup_processes()
