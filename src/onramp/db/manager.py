@@ -6,6 +6,7 @@ import sys
 import importlib.util
 from tortoise import Tortoise
 from tortoise.contrib.starlette import register_tortoise
+from typing import Dict, Any, List
 
 class DatabaseManager:
     """Manages database connections and model discovery"""
@@ -67,10 +68,11 @@ class DatabaseManager:
         
         if engine == 'sqlite':
             db_name = db_config.get('name', 'db.sqlite3')
-            # Make sure it's in the project root
+            # Put SQLite database in app/db/ directory
             if not os.path.isabs(db_name):
-                project_root = os.path.dirname(self.app_dir)
-                db_path = os.path.join(project_root, db_name)
+                db_dir = os.path.join(self.app_dir, 'db')
+                os.makedirs(db_dir, exist_ok=True)
+                db_path = os.path.join(db_dir, db_name)
             else:
                 db_path = db_name
             return f"sqlite://{db_path}"
@@ -98,16 +100,19 @@ class DatabaseManager:
         """Discover all model classes in the app"""
         models_path = os.path.join(self.app_dir, 'models')
         
-        # Add app directory to Python path
+        # Add both the app directory and project root to Python path
+        project_root = os.path.dirname(self.app_dir)
         if self.app_dir not in sys.path:
             sys.path.insert(0, self.app_dir)
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
         
         model_modules = []
         
-        # Check for models.py file
-        models_file = os.path.join(self.app_dir, 'models', 'models.py')
+        # Check for models.py file in models directory
+        models_file = os.path.join(models_path, 'models.py')
         if os.path.exists(models_file):
-            model_modules.append('models.models')
+            model_modules.append('app.models.models')
         
         # Check for individual model files in models directory
         if os.path.exists(models_path):
@@ -115,7 +120,7 @@ class DatabaseManager:
                 if filename.endswith('.py') and not filename.startswith('__'):
                     module_name = filename[:-3]
                     if module_name != 'models':  # Don't duplicate models.models
-                        model_modules.append(f'models.{module_name}')
+                        model_modules.append(f'app.models.{module_name}')
         
         return model_modules
     

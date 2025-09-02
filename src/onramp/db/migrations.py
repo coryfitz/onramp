@@ -4,6 +4,7 @@ Migration management for OnRamp using Aerich
 import os
 import sys
 import subprocess
+import asyncio
 from typing import Optional
 from .manager import get_db_manager
 
@@ -14,10 +15,14 @@ class MigrationManager:
         self.app_dir = app_dir
         self.db_manager = get_db_manager(app_dir)
         self.project_root = os.path.dirname(self.db_manager.app_dir)
+        self.db_dir = os.path.join(self.db_manager.app_dir, 'db')  # app/db/
         
     def _ensure_aerich_config(self):
         """Ensure aerich.toml exists with proper configuration"""
         aerich_config_path = os.path.join(self.project_root, 'pyproject.toml')
+        
+        # Ensure the db directory exists
+        os.makedirs(self.db_dir, exist_ok=True)
         
         # Check if aerich config exists in pyproject.toml
         if os.path.exists(aerich_config_path):
@@ -31,17 +36,22 @@ class MigrationManager:
         
         aerich_section = f"""
 [tool.aerich]
-tortoise_orm = "app.db_config.TORTOISE_ORM"
-location = "./migrations"
+tortoise_orm = "app.db.db_config.TORTOISE_ORM"
+location = "./app/db/migrations"
 src_folder = "./."
 """
         
-        # Create db_config.py in app directory for aerich to import
-        db_config_path = os.path.join(self.db_manager.app_dir, 'db_config.py')
+        # Create db_config.py in app/db/ directory for aerich to import
+        db_config_path = os.path.join(self.db_dir, 'db_config.py')
         with open(db_config_path, 'w') as f:
             f.write(f"""# Auto-generated database config for aerich
 TORTOISE_ORM = {repr(tortoise_config)}
 """)
+        
+        # Create __init__.py in db directory to make it a package
+        init_path = os.path.join(self.db_dir, '__init__.py')
+        with open(init_path, 'w') as f:
+            f.write("# Database package\n")
         
         if os.path.exists(aerich_config_path):
             with open(aerich_config_path, 'a') as f:
@@ -87,7 +97,7 @@ version = "0.1.0"
         print("Setting up migration system...")
         self._ensure_aerich_config()
         
-        migrations_dir = os.path.join(self.project_root, 'migrations')
+        migrations_dir = os.path.join(self.db_dir, 'migrations')
         if not os.path.exists(migrations_dir):
             # Try to run aerich init-db, but don't fail if it doesn't work
             # (might fail if models aren't properly set up yet)
@@ -106,7 +116,7 @@ version = "0.1.0"
         self._ensure_aerich_config()
         
         # Make sure aerich is initialized first
-        if not os.path.exists(os.path.join(self.project_root, 'migrations')):
+        if not os.path.exists(os.path.join(self.db_dir, 'migrations')):
             self.init_migrations()
         
         command = ["migrate"]
@@ -121,7 +131,7 @@ version = "0.1.0"
         self._ensure_aerich_config()
         
         # Make sure aerich is initialized first
-        if not os.path.exists(os.path.join(self.project_root, 'migrations')):
+        if not os.path.exists(os.path.join(self.db_dir, 'migrations')):
             self.init_migrations()
             return True  # init-db also applies initial schema
         
@@ -132,7 +142,7 @@ version = "0.1.0"
         print("Preparing and applying migrations...")
         
         # Check if this is the first time - if so, initialize
-        migrations_dir = os.path.join(self.project_root, 'migrations')
+        migrations_dir = os.path.join(self.db_dir, 'migrations')
         if not os.path.exists(migrations_dir):
             print("First time setup - initializing migration system...")
             if not self._run_aerich_command(["init-db"]):

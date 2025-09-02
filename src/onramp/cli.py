@@ -244,6 +244,10 @@ def create_app_directory(name, api_only=False):
 
         backend_dir = os.path.join(directory_path, 'app')
         os.makedirs(backend_dir, exist_ok=True)
+        
+        # Create __init__.py to make app a proper Python package
+        with open(os.path.join(backend_dir, '__init__.py'), 'w') as f:
+            f.write("# OnRamp App Package\n")
 
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'settings.py',
                         os.path.join(backend_dir, 'settings.py'))
@@ -252,6 +256,15 @@ def create_app_directory(name, api_only=False):
         os.makedirs(models_dir, exist_ok=True)
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'models.py',
                         os.path.join(models_dir, 'models.py'))
+        # Create __init__.py to make models a proper Python package
+        with open(os.path.join(models_dir, '__init__.py'), 'w') as f:
+            f.write("# Models package\n")
+
+        # Create db directory for database files and migrations
+        db_dir = os.path.join(backend_dir, 'db')
+        os.makedirs(db_dir, exist_ok=True)
+        with open(os.path.join(db_dir, '__init__.py'), 'w') as f:
+            f.write("# Database package\n")
 
         if not api_only:
             routes_dir = os.path.join(backend_dir, 'routes')
@@ -288,6 +301,7 @@ def create_app_directory(name, api_only=False):
             
     except Exception as e:
         print(f"An error occurred while creating the directory: {e}")
+
 # -----------------------------------------------------------------------------
 # CLI entrypoint
 # -----------------------------------------------------------------------------

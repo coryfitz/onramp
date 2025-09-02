@@ -1,8 +1,9 @@
 """
-Model interface for OnRamp
+Django-like model interface for OnRamp
 """
 from tortoise.models import Model as TortoiseModel
 from tortoise import fields as tortoise_fields
+from typing import Any, Optional, Type, Dict, List
 
 class Model(TortoiseModel):
     """
@@ -97,18 +98,10 @@ class UUIDField(tortoise_fields.UUIDField):
     """UUID field"""
     pass
 
-# Relationship fields
-class ForeignKeyField(tortoise_fields.ForeignKeyField):
-    """Foreign key relationship"""
-    pass
-
-class OneToOneField(tortoise_fields.OneToOneField):
-    """One to one relationship"""
-    pass
-
-class ManyToManyField(tortoise_fields.ManyToManyField):
-    """Many to many relationship"""
-    pass
+# Relationship fields - these need special handling, so we'll use direct references
+ForeignKeyField = tortoise_fields.ForeignKeyField
+OneToOneField = tortoise_fields.OneToOneField
+ManyToManyField = tortoise_fields.ManyToManyField
 
 # Convenience aliases (Django compatibility)
 AutoField = tortoise_fields.IntField  # Primary key auto field
