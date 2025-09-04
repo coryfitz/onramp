@@ -8,6 +8,7 @@ dependencies = [
     "aerich>=0.9.1",
     "starlette>=0.47.3",
     "tortoise>=0.1.1",
+    "uvicorn>=0.35.0",
     "watchfiles>=1.1.0",
 ]
 
