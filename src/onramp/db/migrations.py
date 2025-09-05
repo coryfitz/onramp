@@ -111,7 +111,7 @@ version = "0.1.0"
             return True
     
     def create_migration(self, name: Optional[str] = None):
-        """Create a new migration (equivalent to Django's makemigrations)"""
+        """Create a new migration"""
         print("Creating migration...")
         self._ensure_aerich_config()
         
@@ -126,7 +126,7 @@ version = "0.1.0"
         return self._run_aerich_command(command)
     
     def apply_migrations(self):
-        """Apply pending migrations (equivalent to Django's migrate)"""
+        """Apply pending migrations"""
         print("Applying migrations...")
         self._ensure_aerich_config()
         
