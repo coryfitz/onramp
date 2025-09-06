@@ -1,6 +1,3 @@
-# OnRamp Models
-# Define your database models here
-
 from onramp.db import models
 
 # Example model - feel free to modify or delete
