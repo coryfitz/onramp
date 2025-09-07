@@ -15,6 +15,7 @@ import atexit
 from watchfiles import watch
 from .db.migrations import create_migration, migrate, init_migrations
 from .rn_app import create_react_native_app
+from types import SimpleNamespace
 
 # Also set the env flag so children inherit it (uvicorn worker, etc.)
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -23,6 +24,23 @@ PROJECT_ROOT = os.path.abspath(os.getcwd())
 APP_DIR = os.path.join(PROJECT_ROOT, 'app')
 BUILD_DIR = os.path.join(PROJECT_ROOT, 'build')
 SETTINGS_PATH = os.path.join(APP_DIR, 'settings.py')
+
+def load_settings():
+    """Load app/settings.py, defaulting to BACKEND=True if not present or import fails."""
+    if not os.path.exists(SETTINGS_PATH):
+        return SimpleNamespace(BACKEND=True)
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("app_settings", SETTINGS_PATH)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        if not hasattr(mod, 'BACKEND'):
+            mod.BACKEND = True
+        return mod
+    except Exception:
+        return SimpleNamespace(BACKEND=True)
+
+settings = load_settings()
 
 def handle_prepmigrations(args):
     """Handle the prepmigrations command"""
@@ -148,6 +166,26 @@ def _start_uvicorn_worker(app_dir: str, port: int):
 def run_uvicorn_with_watch(port=8000):
     """Watch app/ for changes and restart uvicorn worker (no parent reloader)."""
     proc = None
+    
+    # Files/patterns to ignore
+    ignore_patterns = [
+        '.sqlite3-shm',
+        '.sqlite3-wal', 
+        '.sqlite3-journal',
+        '.pyc',
+        '.pyo',
+        '__pycache__',
+        '.DS_Store',
+        'Thumbs.db',
+        '.tmp',
+        '.log'
+    ]
+    
+    def should_ignore_change(file_path):
+        """Check if a file change should be ignored."""
+        file_path_str = str(file_path)
+        return any(pattern in file_path_str for pattern in ignore_patterns)
+    
     try:
         if is_port_in_use(port):
             print(f"Port {port} is already in use.")
@@ -165,8 +203,18 @@ def run_uvicorn_with_watch(port=8000):
         proc = _start_uvicorn_worker(APP_DIR, port)
 
         # restart on changes
-        for _changes in watch(APP_DIR):
-            print("Changes detected, restarting server...")
+        for changes in watch(APP_DIR):
+            # Filter out ignored changes
+            filtered_changes = [
+                change for change in changes 
+                if not should_ignore_change(change[1])
+            ]
+            
+            if not filtered_changes:
+                continue  # Skip if all changes were ignored
+                
+            print(f"Changes detected: {filtered_changes}")
+            print("Restarting server...")
             try:
                 if proc and proc.poll() is None:
                     proc.terminate()
@@ -198,8 +246,38 @@ def run_uvicorn_with_watch(port=8000):
 # -----------------------------------------------------------------------------
 # Orchestration
 # -----------------------------------------------------------------------------
+
+def open_new_terminal_and_run_web(build_dir: str):
+    """Open a new terminal window and run npm run start:web in the build directory."""
+    global spawned_processes
+    system = platform.system()
+    try:
+        if system == "Windows":
+            p = subprocess.Popen(['start', 'cmd', '/k', f'cd /d "{build_dir}" && npm run start:web'], shell=True)
+            spawned_processes.append(p)
+        elif system == "Darwin":
+            p = subprocess.Popen(['osascript', '-e', f'tell application "Terminal" to do script "cd \\"{build_dir}\\" && npm run start:web"'])
+            spawned_processes.append(p)
+        else:
+            for cmd in (
+                ['gnome-terminal', '--', 'bash', '-c', f'cd "{build_dir}" && npm run start:web; exec bash'],
+                ['xterm', '-e', f'cd "{build_dir}" && npm run start:web; bash'],
+                ['konsole', '-e', f'cd "{build_dir}" && npm run start:web; bash'],
+                ['x-terminal-emulator', '-e', f'cd "{build_dir}" && npm run start:web; bash'],
+            ):
+                try:
+                    p = subprocess.Popen(cmd)
+                    spawned_processes.append(p)
+                    break
+                except FileNotFoundError:
+                    continue
+            else:
+                print("Could not find a suitable terminal emulator. Please run 'npm run start:web' manually in the build directory.")
+    except Exception as e:
+        print(f"Failed to launch web server in a new terminal: {e}")
+
 def run_command_logic(port=8000):
-    """Handle the run command logic based on directory structure and settings."""
+    """Handle the run command logic - web first approach."""
     if not os.path.exists(BUILD_DIR):
         print("No build directory found. Running backend only")
         run_uvicorn_with_watch(port)
@@ -209,18 +287,20 @@ def run_command_logic(port=8000):
         backend_enabled = getattr(settings, 'BACKEND', True)
 
         if not backend_enabled:
-            print("Backend is disabled. Running npm start in build directory")
+            print("Backend is disabled. Running web development server")
             try:
-                p = subprocess.Popen(["npm", "start"], cwd=BUILD_DIR)
+                # Run web by default when backend is disabled
+                p = subprocess.Popen(["npm", "run", "start:web"], cwd=BUILD_DIR)
                 spawned_processes.append(p)
                 p.wait()
             except KeyboardInterrupt:
-                print("\nShutting down npm...")
+                print("\nShutting down web server...")
                 cleanup_processes()
         else:
-            print("Backend is enabled. Starting both frontend and backend")
-            open_new_terminal_and_run_npm(BUILD_DIR)  # frontend in a new terminal
-            run_uvicorn_with_watch(port)               # backend in this terminal
+            print("Backend is enabled. Starting web frontend and backend")
+            # Start web instead of native by default
+            open_new_terminal_and_run_web(BUILD_DIR)  # web in new terminal
+            run_uvicorn_with_watch(port)              # backend in this terminal
 
     except Exception as e:
         print(f"Error checking settings: {e}. Running backend only")
