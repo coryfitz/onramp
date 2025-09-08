@@ -111,6 +111,205 @@ def find_next_available_port(starting_port=8000):
     return port
 
 # -----------------------------------------------------------------------------
+# Native project management
+# -----------------------------------------------------------------------------
+def ensure_native_projects():
+    """Ensure iOS and Android projects exist, create them if they don't."""
+    ios_dir = os.path.join(BUILD_DIR, 'ios')
+    android_dir = os.path.join(BUILD_DIR, 'android')
+    
+    if os.path.exists(ios_dir) and os.path.exists(android_dir):
+        return True
+    
+    print("Native projects not found. Initializing...")
+    
+    # Create in temp directory to avoid CLI issues
+    temp_dir = os.path.join(PROJECT_ROOT, 'temp_rn_init')
+    try:
+        # Use community CLI to avoid Node.js version issues
+        subprocess.run([
+            'npx', '@react-native-community/cli@latest', 'init', 'TempProject',
+            '--version', '0.75.4',  # Use a more recent but stable version
+            '--directory', temp_dir,
+            '--skip-install'  # Skip npm install to avoid dependency issues
+        ], check=True, cwd=PROJECT_ROOT)
+        
+        # The project is created directly in temp_dir, not in a subdirectory
+        temp_project_dir = temp_dir
+        
+        # Check if the expected directories exist
+        temp_ios_dir = os.path.join(temp_project_dir, 'ios')
+        temp_android_dir = os.path.join(temp_project_dir, 'android')
+        
+        if not os.path.exists(temp_ios_dir) or not os.path.exists(temp_android_dir):
+            print(f"Error: Expected native directories not found in {temp_project_dir}")
+            print(f"iOS dir exists: {os.path.exists(temp_ios_dir)}")
+            print(f"Android dir exists: {os.path.exists(temp_android_dir)}")
+            if os.path.exists(temp_project_dir):
+                print(f"Contents of temp project dir: {os.listdir(temp_project_dir)}")
+            return False
+        
+        # Ensure build directory exists
+        os.makedirs(BUILD_DIR, exist_ok=True)
+        
+        # Copy native folders to build directory
+        if not os.path.exists(ios_dir):
+            shutil.copytree(temp_ios_dir, ios_dir)
+            print("✓ iOS project initialized")
+            
+        if not os.path.exists(android_dir):
+            shutil.copytree(temp_android_dir, android_dir)
+            print("✓ Android project initialized")
+        
+        # Install npm dependencies in build directory if package.json doesn't exist
+        build_package_json = os.path.join(BUILD_DIR, 'package.json')
+        if not os.path.exists(build_package_json):
+            temp_package_json = os.path.join(temp_project_dir, 'package.json')
+            if os.path.exists(temp_package_json):
+                shutil.copy2(temp_package_json, build_package_json)
+                print("Installing npm dependencies...")
+                subprocess.run(['npm', 'install'], cwd=BUILD_DIR, check=True)
+                print("✓ npm dependencies installed")
+        
+        # Only try to install iOS dependencies on macOS and if CocoaPods is available
+        if platform.system() == "Darwin" and os.path.exists(ios_dir):
+            try:
+                # Check if pod command exists
+                subprocess.run(['which', 'pod'], check=True, capture_output=True)
+                print("Installing iOS dependencies...")
+                subprocess.run(['pod', 'install'], cwd=ios_dir, check=True)
+                print("✓ iOS dependencies installed")
+            except subprocess.CalledProcessError:
+                print("⚠️  CocoaPods not found or failed. You may need to:")
+                print("   1. Install CocoaPods: sudo gem install cocoapods")
+                print("   2. Run 'pod install' manually in the build/ios directory")
+                print("   3. Ensure Xcode version >= 16.1 (current requirement)")
+                # Don't fail here, let the user handle CocoaPods manually
+        
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to initialize native projects: {e}")
+        print("This might be due to:")
+        print("  - Xcode version compatibility (React Native 0.75+ requires Xcode 16.1+)")
+        print("  - Missing React Native development environment setup")
+        print("  - Network issues downloading dependencies")
+        print(f"  - Please check: https://reactnative.dev/docs/set-up-your-environment")
+        return False
+    except Exception as e:
+        print(f"Error during native project setup: {e}")
+        return False
+    finally:
+        # Clean up temp directory
+        if os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as e:
+                print(f"Warning: Could not clean up temp directory {temp_dir}: {e}")
+
+
+# -----------------------------------------------------------------------------
+# Platform-specific runners
+# -----------------------------------------------------------------------------
+def run_web(with_backend=True, port=8000):
+    """Run web development server."""
+    if not os.path.exists(BUILD_DIR):
+        print("Build directory not found. Run 'onramp new <name>' first.")
+        return
+    
+    if with_backend:
+        backend_enabled = getattr(settings, 'BACKEND', True)
+        if backend_enabled:
+            print("Starting web frontend and backend...")
+            # Start web in background
+            web_process = subprocess.Popen(["npm", "run", "start:web"], cwd=BUILD_DIR)
+            spawned_processes.append(web_process)
+            # Run backend in foreground
+            run_uvicorn_with_watch(port)
+        else:
+            print("Backend disabled. Running web only...")
+            subprocess.run(["npm", "run", "start:web"], cwd=BUILD_DIR)
+    else:
+        print("Running web development server...")
+        subprocess.run(["npm", "run", "start:web"], cwd=BUILD_DIR)
+
+def run_ios():
+    """Run iOS simulator."""
+    if not os.path.exists(BUILD_DIR):
+        print("Build directory not found. Run 'onramp new <name>' first.")
+        return
+        
+    if platform.system() != "Darwin":
+        print("iOS development requires macOS.")
+        return
+    
+    # Check Xcode version before proceeding
+    try:
+        result = subprocess.run(['xcodebuild', '-version'], capture_output=True, text=True, check=True)
+        version_line = result.stdout.split('\n')[0]
+        print(f"Found {version_line}")
+        
+        # Extract version number (e.g., "Xcode 15.4" -> "15.4")
+        version_str = version_line.split()[1]
+        major_version = float(version_str.split('.')[0] + '.' + version_str.split('.')[1])
+        
+        if major_version < 16.1:
+            print(f"⚠️  Warning: React Native 0.81.1 requires Xcode 16.1 or later.")
+            print(f"   Current version: {version_str}")
+            print(f"   Please update Xcode to use React Native 0.81.1 features.")
+            print(f"   You can update Xcode through the Mac App Store or Apple Developer portal.")
+            
+            response = input("Continue anyway? (y/n): ").strip().lower()
+            if response != 'y':
+                return
+                
+    except subprocess.CalledProcessError:
+        print("⚠️  Could not detect Xcode version. Make sure Xcode is installed.")
+        response = input("Continue anyway? (y/n): ").strip().lower()
+        if response != 'y':
+            return
+    except Exception as e:
+        print(f"⚠️  Error checking Xcode version: {e}")
+        
+    print("Preparing iOS development...")
+    
+    # Ensure native projects exist
+    if not ensure_native_projects():
+        print("Failed to set up iOS project.")
+        return
+        
+    # Run iOS
+    try:
+        subprocess.run(["npm", "run", "ios"], cwd=BUILD_DIR, check=True)
+    except subprocess.CalledProcessError:
+        print("Failed to start iOS simulator.")
+        print("\nTroubleshooting steps:")
+        print("1. Make sure iOS Simulator is installed with Xcode")
+        print("2. Try running: 'npx react-native run-ios' manually in the build directory")
+        print("3. Or open build/ios/YourApp.xcworkspace in Xcode and run from there")
+        print("4. Check React Native environment setup: https://reactnative.dev/docs/set-up-your-environment")
+
+def run_android():
+    """Run Android emulator."""
+    if not os.path.exists(BUILD_DIR):
+        print("Build directory not found. Run 'onramp new <name>' first.")
+        return
+        
+    print("Preparing Android development...")
+    
+    # Ensure native projects exist
+    if not ensure_native_projects():
+        print("Failed to set up Android project.")
+        return
+        
+    # Run Android
+    try:
+        subprocess.run(["npm", "run", "android"], cwd=BUILD_DIR, check=True)
+    except subprocess.CalledProcessError:
+        print("Failed to start Android emulator. Make sure Android Studio and SDK are installed.")
+
+
+# -----------------------------------------------------------------------------
 # Frontend helpers
 # -----------------------------------------------------------------------------
 def open_new_terminal_and_run_npm(build_dir: str):
@@ -393,10 +592,11 @@ def main():
     original_cwd = os.getcwd()
     try:
         parser = argparse.ArgumentParser(description=f"{FRAMEWORK_NAME} App Generator and Runner")
-        parser.add_argument("command", help="The command to run (e.g., new, run, prepmigrations, migrate)")
+        parser.add_argument("command", help="The command to run")
         parser.add_argument("name", nargs='?', help="The name of the app directory/migration to be created")
         parser.add_argument("--port", type=int, default=8000, help="Port for the development server")
-        parser.add_argument("--api", action="store_true", help="Create API-only app without React Native frontend (for 'new' command)")
+        parser.add_argument("--api", action="store_true", help="Create API-only app without React Native frontend")
+        parser.add_argument("--web-only", action="store_true", help="Run web without backend")
         args = parser.parse_args()
 
         if args.command == "new":
@@ -412,7 +612,20 @@ def main():
                 print(f"Please provide a name for the new app. Usage: '{FRAMEWORK_NAME.lower()} new <name>'")
                 
         elif args.command == "run":
-            run_command_logic(port=args.port)
+            # Use the sophisticated run_command_logic instead of just run_web
+            if args.web_only:
+                run_web(with_backend=False, port=args.port)
+            else:
+                run_command_logic(port=args.port)
+            
+        elif args.command == "ios":
+            run_ios()
+            
+        elif args.command == "android":
+            run_android()
+            
+        elif args.command == "web":
+            run_web(with_backend=False)
             
         elif args.command == "prepmigrations":
             return handle_prepmigrations(args)
@@ -422,10 +635,13 @@ def main():
             
         else:
             print(f"Invalid command. Available commands:")
-            print(f"  {FRAMEWORK_NAME.lower()} new <name>           - Create new app")
-            print(f"  {FRAMEWORK_NAME.lower()} run                  - Run development server")
-            print(f"  {FRAMEWORK_NAME.lower()} prepmigrations       - Prepare database migrations")
-            print(f"  {FRAMEWORK_NAME.lower()} migrate              - Apply database migrations")
+            print(f"  {FRAMEWORK_NAME.lower()} new <name>     - Create new app")
+            print(f"  {FRAMEWORK_NAME.lower()} run            - Run web development (default)")
+            print(f"  {FRAMEWORK_NAME.lower()} web            - Run web only (no backend)")
+            print(f"  {FRAMEWORK_NAME.lower()} ios            - Run iOS simulator")
+            print(f"  {FRAMEWORK_NAME.lower()} android        - Run Android emulator") 
+            print(f"  {FRAMEWORK_NAME.lower()} prepmigrations - Prepare database migrations")
+            print(f"  {FRAMEWORK_NAME.lower()} migrate        - Apply database migrations")
             
     except KeyboardInterrupt:
         print("\nInterrupted by user")

@@ -107,7 +107,7 @@ module.exports = {
   entry: './index.web.js',
   mode: 'development',
   devServer: {
-    port: 3000,
+    port: 'auto',  // Automatically find available port
     historyApiFallback: true,
     static: {
       directory: path.join(__dirname, 'assets'),
@@ -341,7 +341,7 @@ export default function HomePage() {
       backgroundColor: '#f5f5f5',
       justifyContent: 'center',
       alignItems: 'center'
-    }}>
+    } as any}>
       <html.div style={{
         backgroundColor: 'white',
         padding: 30,
@@ -349,31 +349,33 @@ export default function HomePage() {
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
         maxWidth: 500,
         width: '100%'
-      }}>
+      } as any}>
         <html.h1 style={{
           fontSize: 24,
           color: '#333',
           marginBottom: 16,
           fontWeight: 'bold',
           textAlign: 'center'
-        }}>
+        } as any}>
           Welcome to OnRamp
         </html.h1>
-        
-        <html.p style={{
-          textAlign: 'center',
-          color: '#666',
-          marginBottom: 20
-        }}>
-          File-based routing is ready!
-        </html.p>
-        
+
+        <html.h2 style={{
+          fontSize: 19,
+          color: '#333',
+          marginBottom: 16,
+          fontWeight: 'bold',
+          textAlign: 'center'
+        } as any}>
+          The Python App Framework
+        </html.h2>
+
         <html.div style={{
           display: 'flex',
           gap: 10,
           justifyContent: 'center',
           flexDirection: 'column'
-        }}>
+        } as any}>
           <html.button 
             onClick={() => navigate('/profile/123')}
             style={{
@@ -383,7 +385,7 @@ export default function HomePage() {
               border: 'none',
               borderRadius: 6,
               cursor: 'pointer'
-            }}
+            } as any}
           >
             Go to Profile
           </html.button>
@@ -396,7 +398,7 @@ export default function HomePage() {
               border: 'none',
               borderRadius: 6,
               cursor: 'pointer'
-            }}
+            } as any}
           >
             About Page
           </html.button>
@@ -581,7 +583,7 @@ def create_typescript_config(project_dir):
             "allowSyntheticDefaultImports": True,
             "strict": True,
             "forceConsistentCasingInFileNames": True,
-            "moduleResolution": "node",
+            "moduleResolution": "bundler",  # Changed from "node"
             "resolveJsonModule": True,
             "isolatedModules": True,
             "noEmit": True,
