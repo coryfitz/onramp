@@ -19,6 +19,9 @@ from .rn_app import create_react_native_app
 from types import SimpleNamespace
 import re
 
+''
+""
+
 # Also set the env flag so children inherit it (uvicorn worker, etc.)
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
@@ -186,11 +189,46 @@ def write_nvmrc(project_root: str, track: str = "20"):
 # -----------------------------------------------------------------------------
 # Native project management
 # -----------------------------------------------------------------------------
-def ensure_native_projects(custom_env=None):
-    """Ensure iOS and Android projects exist, create them if they don't."""
+def to_rn_project_name(s: str) -> str:
+    # RN app names must be alnum and start with a letter; use PascalCase
+    parts = re.findall(r"[A-Za-z0-9]+", s)
+    if not parts:
+        return "App"
+    name = "".join(p.capitalize() for p in parts)
+    if not name[0].isalpha():
+        name = "App" + name
+    return name
+
+def sync_js_app_name(build_dir: str, native_name: str):
+    # app.json
+    app_json = os.path.join(build_dir, "app.json")
+    if os.path.exists(app_json):
+        import json
+        with open(app_json, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data["name"] = native_name
+        data["displayName"] = data.get("displayName") or native_name
+        with open(app_json, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    # index.js (force registerComponent to the native name)
+    idx = os.path.join(build_dir, "index.js")
+    if os.path.exists(idx):
+        try:
+            with open(idx, "r", encoding="utf-8") as f:
+                src = f.read()
+            src = re.sub(
+                r"AppRegistry\.registerComponent\([^)]*\)",
+                f"AppRegistry.registerComponent('{native_name}', () => App)",
+                src,
+            )
+            with open(idx, "w", encoding="utf-8") as f:
+                f.write(src)
+        except Exception:
+            pass
+
+def ensure_native_projects(custom_env=None, project_name: str | None = None):
     ios_dir = os.path.join(BUILD_DIR, 'ios')
     android_dir = os.path.join(BUILD_DIR, 'android')
-
     if os.path.exists(ios_dir) and os.path.exists(android_dir):
         return True
 
@@ -198,56 +236,46 @@ def ensure_native_projects(custom_env=None):
 
     env = custom_env or ensure_node_env()
 
-    # Create in temp directory to avoid CLI issues
+    # derive native name from the root folder (e.g. 'myapp' -> 'Myapp')
+    root_basename = os.path.basename(PROJECT_ROOT)
+    native_name = to_rn_project_name(project_name or root_basename)
+
     temp_dir = os.path.join(PROJECT_ROOT, 'temp_rn_init')
     try:
-        # Use community CLI pinned to Node 20–compatible version
         subprocess.run([
-            'npx', '--yes', '@react-native-community/cli@20.0.2', 'init', 'TempProject',
-            '--version', '0.81.1',              # align with your generator
+            'npx', '--yes', '@react-native-community/cli@20.0.2', 'init', native_name,
+            '--version', '0.81.1',
             '--directory', temp_dir,
-            '--skip-install'                    # Skip npm install; we manage deps in /build
+            '--skip-install'
         ], check=True, cwd=PROJECT_ROOT, env=env)
 
-        # The project is created directly in temp_dir
-        temp_project_dir = temp_dir
-
+        temp_project_dir = temp_dir  # CLI writes directly to temp_dir
         temp_ios_dir = os.path.join(temp_project_dir, 'ios')
         temp_android_dir = os.path.join(temp_project_dir, 'android')
 
-        if not os.path.exists(temp_ios_dir) or not os.path.exists(temp_android_dir):
-            print(f"Error: Expected native directories not found in {temp_project_dir}")
-            print(f"iOS dir exists: {os.path.exists(temp_ios_dir)}")
-            print(f"Android dir exists: {os.path.exists(temp_android_dir)}")
-            if os.path.exists(temp_project_dir):
-                print(f"Contents of temp project dir: {os.listdir(temp_project_dir)}")
-            return False
-
-        # Ensure build directory exists
         os.makedirs(BUILD_DIR, exist_ok=True)
-
-        # Copy native folders to build directory
         if not os.path.exists(ios_dir):
             shutil.copytree(temp_ios_dir, ios_dir)
-            print("✓ iOS project initialized")
-
+            print(f"✓ iOS project initialized ({native_name})")
         if not os.path.exists(android_dir):
             shutil.copytree(temp_android_dir, android_dir)
-            print("✓ Android project initialized")
+            print(f"✓ Android project initialized ({native_name})")
 
-        # Only install dependencies here if build/package.json doesn't exist.
-        # (Your generator creates package.json already.)
+        # copy package.json if your generator didn't create one yet
         build_package_json = os.path.join(BUILD_DIR, 'package.json')
         if not os.path.exists(build_package_json):
-            temp_package_json = os.path.join(temp_project_dir, 'package.json')
-            if os.path.exists(temp_package_json):
-                shutil.copy2(temp_package_json, build_package_json)
-                print("Installing npm dependencies...")
-                write_nvmrc(PROJECT_ROOT)
-                subprocess.run(['npm', 'install'], cwd=BUILD_DIR, check=True, env=env)
-                print("✓ npm dependencies installed")
+            shutil.copy2(os.path.join(temp_project_dir, 'package.json'), build_package_json)
 
-        # Only try to install iOS dependencies on macOS and if CocoaPods is available
+        # keep JS & native names in sync
+        sync_js_app_name(BUILD_DIR, native_name)
+        write_nvmrc(PROJECT_ROOT)
+
+        # npm i (only if needed)
+        if not os.path.exists(os.path.join(BUILD_DIR, 'node_modules')):
+            print("Installing npm dependencies...")
+            subprocess.run(['npm', 'install', '--legacy-peer-deps'], cwd=BUILD_DIR, check=True, env=env)
+
+        # iOS pods on macOS
         if platform.system() == "Darwin" and os.path.exists(ios_dir):
             try:
                 subprocess.run(['which', 'pod'], check=True, capture_output=True)
@@ -255,57 +283,13 @@ def ensure_native_projects(custom_env=None):
                 subprocess.run(['pod', 'install'], cwd=ios_dir, check=True, env=env)
                 print("✓ iOS dependencies installed")
             except subprocess.CalledProcessError:
-                print("CocoaPods not found.")
-                response = input("Would you like to install CocoaPods via Homebrew? (y/n): ").strip().lower()
-                if response == 'y':
-                    try:
-                        subprocess.run(['which', 'brew'], check=True, capture_output=True)
-                        print("Installing CocoaPods via Homebrew...")
-                        subprocess.run(['brew', 'install', 'cocoapods'], check=True)
-                        print("✓ CocoaPods installed via Homebrew")
-                        print("Installing iOS dependencies...")
-                        subprocess.run(['pod', 'install'], cwd=ios_dir, check=True, env=env)
-                        print("✓ iOS dependencies installed")
-                    except subprocess.CalledProcessError as brew_error:
-                        try:
-                            subprocess.run(['which', 'brew'], check=True, capture_output=True)
-                            print(f"Homebrew install failed: {brew_error}")
-                        except subprocess.CalledProcessError:
-                            print("Homebrew not found. Please install Homebrew first:")
-                            print("Visit https://brew.sh or run:")
-                            print('/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"')
-                            print("Then run 'brew install cocoapods'")
-                            return True  # Don't fail the whole setup
-                        print("CocoaPods installation failed.")
-                        print("Manual installation options:")
-                        print("1. Try: brew install cocoapods")
-                        print("2. If Homebrew issues persist, reinstall Homebrew")
-                        print("3. Run 'pod install' manually in build/ios directory after installing")
-                else:
-                    print("Skipping CocoaPods installation.")
-                    print("You can install it later with:")
-                    print("1. brew install cocoapods (recommended)")
-                    print("2. Then run 'pod install' in the build/ios directory")
-
+                print("CocoaPods not found (skipping).")
         return True
 
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to initialize native projects: {e}")
-        print("This might be due to:")
-        print("  - Xcode version compatibility (React Native 0.81+ may require modern Xcode)")
-        print("  - Missing React Native development environment setup")
-        print("  - Network issues downloading dependencies")
-        print("  - Please check: https://reactnative.dev/docs/set-up-your-environment")
-        return False
-    except Exception as e:
-        print(f"Error during native project setup: {e}")
-        return False
     finally:
         if os.path.exists(temp_dir):
-            try:
-                shutil.rmtree(temp_dir)
-            except Exception as e:
-                print(f"Warning: Could not clean up temp directory {temp_dir}: {e}")
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 # -----------------------------------------------------------------------------
 # Platform-specific runners
@@ -339,6 +323,11 @@ def run_ios():
 
     if platform.system() != "Darwin":
         print("iOS development requires macOS.")
+        return
+    
+    native_name = to_rn_project_name(os.path.basename(PROJECT_ROOT))
+    if not ensure_native_projects(custom_env=env, project_name=native_name):
+        print("Failed to set up native project.")
         return
 
     # 1) Select/prepare a modern Node and get an env to reuse everywhere
@@ -494,6 +483,11 @@ def run_ios():
 def run_android():
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
+        return
+    
+    native_name = to_rn_project_name(os.path.basename(PROJECT_ROOT))
+    if not ensure_native_projects(custom_env=env, project_name=native_name):
+        print("Failed to set up native project.")
         return
 
     print("Preparing Android development...")
@@ -810,6 +804,14 @@ def create_app_directory(name, api_only=False):
     except Exception as e:
         print(f"An error occurred while creating the directory: {e}")
 
+def repair_ios(build_dir=BUILD_DIR):
+    ios_dir = os.path.join(build_dir, "ios")
+    # blow away derived intermediates that often cause xcodebuild 65
+    subprocess.run(['rm', '-rf', os.path.expanduser('~/Library/Developer/Xcode/DerivedData')])
+    subprocess.run(['rm', '-rf', os.path.join(ios_dir, 'Pods')])
+    subprocess.run(['rm', '-f', os.path.join(ios_dir, 'Podfile.lock')])
+    subprocess.run(['pod', 'install'], cwd=ios_dir, check=False)
+
 # -----------------------------------------------------------------------------
 # CLI entrypoint
 # -----------------------------------------------------------------------------
@@ -860,6 +862,9 @@ def main():
 
         elif args.command == "migrate":
             return handle_migrate(args)
+        
+        elif args.command == "repair:ios":
+            repair_ios()
 
         else:
             print(f"Invalid command. Available commands:")

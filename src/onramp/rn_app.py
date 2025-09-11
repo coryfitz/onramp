@@ -13,19 +13,76 @@ import shutil
 import re
 from pathlib import Path
 
+import os
+import re
+import subprocess
+
 def require_node(version_min="20.19.4"):
+    """
+    Ensure Node >= version_min. If not, offer to switch via nvm.
+    On success, updates os.environ['PATH'] so child processes use the new Node.
+    """
     try:
-        out = subprocess.run(["node","-v"], text=True, capture_output=True, check=True).stdout.strip()
-        m = re.match(r"v(\d+)\.(\d+)\.(\d+)", out)
-        if not m: return
-        cur = tuple(map(int, m.groups()))
-        want = tuple(map(int, version_min.split(".")))
-        if cur < want:
-            print(f"Node {out} detected; React Native requires ≥ v{version_min}.")
-            print("Please `nvm install 20.19.4 && nvm use 20.19.4` and re-run.")
-            raise SystemExit(1)
+        out = subprocess.run(["node", "-v"], text=True, capture_output=True, check=True).stdout.strip()
     except Exception:
-        pass
+        out = ""
+
+    m = re.match(r"v(\d+)\.(\d+)\.(\d+)", out or "")
+    cur = tuple(map(int, m.groups())) if m else (0, 0, 0)
+    want = tuple(map(int, version_min.split(".")))
+
+    if cur and cur >= want:
+        # already good
+        return
+
+    # Not good enough; offer to fix automatically
+    print(f"Node {out or 'not found'} detected; React Native requires ≥ v{version_min}.")
+    resp = input(f"Use nvm to install/use {version_min} now? (y/N): ").strip().lower()
+    if resp != "y":
+        print(f"Please run: nvm install {version_min} && nvm use {version_min}")
+        raise SystemExit(1)
+
+    nvm_dir = os.path.expanduser("~/.nvm")
+    nvm_sh = os.path.join(nvm_dir, "nvm.sh")
+    if not os.path.exists(nvm_sh):
+        print("nvm not found at ~/.nvm. Install nvm first:")
+        print("  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash")
+        print(f"Then run: nvm install {version_min} && nvm use {version_min}")
+        raise SystemExit(1)
+
+    # Try to install/use exact target and capture node path
+    script = f'''
+      export NVM_DIR="{nvm_dir}"
+      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+      nvm install {version_min}
+      nvm use {version_min}
+      echo NODE_BIN:$(command -v node)
+      node -v
+    '''
+    res = subprocess.run(["bash", "-lc", script], text=True, capture_output=True)
+    if res.returncode != 0:
+        print("Failed to activate Node with nvm.\n", res.stdout or res.stderr)
+        raise SystemExit(1)
+
+    # Extract node bin and update PATH for this process (children inherit it)
+    mm = re.search(r"NODE_BIN:(.*)", res.stdout or "")
+    if not mm:
+        print("Could not resolve Node path from nvm output. Aborting.")
+        raise SystemExit(1)
+    node_bin = mm.group(1).strip()
+    node_dir = os.path.dirname(node_bin)
+    os.environ["PATH"] = f"{node_dir}:{os.environ.get('PATH','')}"  # prepend
+
+    # Final sanity check
+    out2 = subprocess.run(["node", "-v"], text=True, capture_output=True, check=True).stdout.strip()
+    m2 = re.match(r"v(\d+)\.(\d+)\.(\d+)", out2 or "")
+    cur2 = tuple(map(int, m2.groups())) if m2 else (0, 0, 0)
+    if cur2 < want:
+        print(f"Unexpected: still on {out2}. Please switch manually.")
+        raise SystemExit(1)
+
+    print(f"✓ Node {out2} activated via nvm")
+
 
 def run_command(command, cwd=None, check=True):
     '''Run a shell command and return the result.'''
@@ -48,56 +105,62 @@ def run_command(command, cwd=None, check=True):
             print(f"Error output: {e.stderr}")
         raise
 
+def _npm_pkg_name(s: str) -> str:
+    """Make a safe npm package name (lowercase, hyphenated)."""
+    s = s.strip().lower()
+    s = re.sub(r'[^a-z0-9._-]+', '-', s)
+    s = re.sub(r'-{2,}', '-', s).strip('-')
+    return s or "app"
 
-def create_package_json(app_name, project_dir: Path):
-    '''Create package.json with separate bundlers for web and native.'''
-    package_json = {
-        "name": app_name,
+def create_package_json(app_name: str, project_dir: Path):
+    """Create package.json with separate bundlers for web and native."""
+    pkg_name = _npm_pkg_name(app_name)
+
+    package = {
+        "name": pkg_name,
         "version": "0.0.1",
         "private": True,
         "scripts": {
-                # Native - use Metro directly for start command
-                "android": "npx react-native run-android",
-                "ios": "npx react-native run-ios",
-                "start:native": "npx metro start --port 8081",  # Direct Metro
-                "start:rn": "npx react-native start",           # CLI fallback
+            # Native
+            "android": "npx react-native run-android",
+            "ios": "npx react-native run-ios",
+            "start:native": "npx metro start --port 8081",
+            "start:rn": "npx react-native start",
 
-                # Web (use Webpack)
-                "start:web": "node scripts/build-routes.js && webpack serve",
-                "build:web": "node scripts/build-routes.js && webpack --mode production",
+            # Web (webpack)
+            "start:web": "node scripts/build-routes.js && webpack serve",
+            "build:web": "node scripts/build-routes.js && webpack --mode production",
 
-                # Default
-                "start": "npm run start:native",
-                "web": "npm run start:web",
-                "build:routes": "node scripts/build-routes.js",
-                "test": "jest",
+            # Defaults
+            "start": "npm run start:native",
+            "web": "npm run start:web",
+            "build:routes": "node scripts/build-routes.js",
+            "test": "jest"
         },
         "dependencies": {
-            "react": "^18.2.0",
-            "react-dom": "^18.2.0",
-            "react-native": "^0.81.1",
-            "react-strict-dom": "^0.0.44",
+            "@react-navigation/bottom-tabs": "^6.6.1",
+            "@react-navigation/native": "^6.1.18",
+            "@react-navigation/native-stack": "^6.9.26",
             "@stylexjs/stylex": "^0.8.0",
-            "@react-navigation/native": "^6.1.0",
-            "@react-navigation/stack": "^6.3.0",
-            "@react-navigation/bottom-tabs": "^6.5.0",
-            "react-native-screens": "^3.29.0",
-            "react-native-safe-area-context": "^4.8.0"
+            "react": "19.1.0",
+            "react-dom": "19.1.0",
+            "react-native": "0.81.1",
+            "react-native-gesture-handler": "^2.16.2",
+            "react-native-safe-area-context": "^5.6.1",
+            "react-native-screens": "^4.6.0",
+            "react-strict-dom": "^0.0.44"
         },
         "devDependencies": {
-            "@babel/core": "^7.20.0",
-            "@babel/runtime": "^7.20.0",
-            "@babel/preset-env": "^7.22.0",
-            "@babel/preset-react": "^7.22.0",
-            "@babel/preset-typescript": "^7.22.0",
-            "@react-native/babel-preset": "^0.81.1",
-            "@react-native/metro-config": "^0.81.1",
-            "@stylexjs/babel-plugin": "^0.8.0",
+            "@babel/core": "^7.24.0",
+            "@babel/preset-env": "^7.24.0",
+            "@babel/preset-react": "^7.24.0",
+            "@babel/preset-typescript": "^7.24.0",
+            "@babel/runtime": "^7.24.0",
 
-            # RN community CLI pinned to Node 20 track
-            "@react-native-community/cli": "^20.0.2",
-            "@react-native-community/cli-platform-ios": "^20.0.2",
-            "@react-native-community/cli-platform-android": "^20.0.2",
+            "@react-native/babel-preset": "0.81.1",
+            "@react-native/metro-config": "0.81.1",
+
+            "@stylexjs/babel-plugin": "^0.8.0",
 
             # Web bundling
             "webpack": "^5.88.0",
@@ -106,18 +169,28 @@ def create_package_json(app_name, project_dir: Path):
             "babel-loader": "^9.1.0",
             "html-webpack-plugin": "^5.5.0",
 
-            "prettier": "^2.4.1",
+            # Types
+            "@types/react": "^19.1.0",
+            "@types/react-dom": "^19.1.0",
+            "typescript": "^5.6.2",
+
+            # Tooling
+            "prettier": "^2.8.8",
             "chokidar": "^3.5.3",
-            "@types/react": "^18.2.0",
-            "@types/react-native": "^0.72.0",
-            "typescript": "^5.0.0"
+
+            # Tests (optional but nice to pin)
+            "jest": "^29.7.0",
+            "react-test-renderer": "19.1.0"
         },
         "jest": { "preset": "react-native" },
-        "engines": { "node": ">=20.19.4" }
-        # Optionally add: "packageManager": "npm@10"
+        "engines": { "node": ">=20.19.4" },
+        "packageManager": "npm@10"
     }
-    (project_dir / "package.json").write_text(json.dumps(package_json, indent=2))
 
+    (project_dir / "package.json").write_text(
+        json.dumps(package, indent=2) + "\n",
+        encoding="utf-8"
+    )
 
 def create_webpack_config(project_dir: Path):
     webpack_config = '''const path = require('path');

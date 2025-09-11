@@ -1,5 +1,5 @@
 // scripts/build-routes.js
-const { generateRoutesConfig } = require('../build/generateRoutes');
+const { generateRoutesConfig } = require('../generateRoutes');
 const chokidar = require('chokidar');
 const path = require('path');
 
