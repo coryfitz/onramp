@@ -372,8 +372,8 @@ def run_web(with_backend=True, port=8000):
         subprocess.run(["npm", "run", "start:web"], cwd=BUILD_DIR, env=env)
 
 
-def run_ios():
-    """Run iOS simulator for the current project with automatic setup."""
+def run_ios(port: int = 8000):
+    """Run iOS simulator; if BACKEND=True also start the backend dev server."""
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
         return
@@ -382,12 +382,10 @@ def run_ios():
         print("iOS development requires macOS.")
         return
 
-    # 1) Select/prepare a modern Node and reuse this env everywhere
-    env = ensure_node_env()  # ensures >= MIN_NODE via nvm if possible
+    # Single Node env to reuse everywhere
+    env = ensure_node_env()
     try:
-        node_ver = subprocess.run(
-            ["node", "-v"], capture_output=True, text=True, check=True, env=env
-        ).stdout.strip()
+        node_ver = subprocess.run(["node", "-v"], capture_output=True, text=True, check=True, env=env).stdout.strip()
         print(f"Using Node.js {node_ver} environment")
     except Exception:
         print("Using Node.js environment (version check failed)")
@@ -395,18 +393,11 @@ def run_ios():
     native_name = to_rn_project_name(os.path.basename(PROJECT_ROOT))
     ios_dir = os.path.join(BUILD_DIR, "ios")
 
-    # 2) Xcode checks
+    # Xcode + components checks (same as before)
     try:
-        result = subprocess.run(
-            ["xcodebuild", "-version"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        result = subprocess.run(["xcodebuild", "-version"], capture_output=True, text=True, check=True)
         version_line = result.stdout.split("\n")[0]
         print(f"Found {version_line}")
-
-        # Warn for old Xcode
         version_str = version_line.split()[1]
         parts = version_str.split(".")
         try:
@@ -416,38 +407,25 @@ def run_ios():
         if major_minor < 16.1:
             print("Warning: React Native 0.81.x works best with Xcode 16.1 or later.")
             print(f"   Current version: {version_str}")
-            response = input("Continue anyway? (y/n): ").strip().lower()
-            if response != "y":
+            if input("Continue anyway? (y/n): ").strip().lower() != "y":
                 return
     except subprocess.CalledProcessError:
         print("Could not detect Xcode version. Make sure Xcode is installed.")
-        response = input("Continue anyway? (y/n): ").strip().lower()
-        if response != "y":
+        if input("Continue anyway? (y/n): ").strip().lower() != "y":
             return
     except Exception as e:
         print(f"Error checking Xcode version: {e}")
 
     print("Checking if Xcode components are properly installed...")
     try:
-        subprocess.run(
-            ["xcodebuild", "-showsdks"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        subprocess.run(["xcodebuild", "-showsdks"], check=True, capture_output=True, text=True)
         try:
-            # list targets/schemes inside the iOS project
-            subprocess.run(
-                ["xcodebuild", "-list"],
-                check=True,
-                capture_output=True,
-                text=True,
-                cwd=ios_dir if os.path.isdir(ios_dir) else BUILD_DIR,
-            )
+            subprocess.run(["xcodebuild", "-list"], check=True, capture_output=True, text=True,
+                           cwd=ios_dir if os.path.isdir(ios_dir) else BUILD_DIR)
             print("Xcode components are working properly")
         except subprocess.CalledProcessError as list_error:
-            error_output = list_error.stderr or str(list_error)
-            if "DVTDownloads.framework" in error_output or "IDESimulatorFoundation" in error_output:
+            err = list_error.stderr or str(list_error)
+            if "DVTDownloads.framework" in err or "IDESimulatorFoundation" in err:
                 print("Detected missing Xcode framework components (IDESimulatorFoundation).")
                 print("Running Xcode first launch setup to install required components...")
                 try:
@@ -455,14 +433,13 @@ def run_ios():
                     print("Xcode components installed successfully")
                 except subprocess.CalledProcessError as setup_error:
                     print(f"Xcode first launch failed: {setup_error}")
-                    response = input("Continue anyway? (y/n): ").strip().lower()
-                    if response != "y":
+                    if input("Continue anyway? (y/n): ").strip().lower() != "y":
                         return
             else:
                 print("Xcode components appear OK")
     except subprocess.CalledProcessError as e:
-        error_output = e.stderr or str(e)
-        if "DVTDownloads.framework" in error_output or "IDESimulatorFoundation" in error_output:
+        err = e.stderr or str(e)
+        if "DVTDownloads.framework" in err or "IDESimulatorFoundation" in err:
             print("Detected missing Xcode framework components.")
             print("Running Xcode first launch setup to install required components...")
             try:
@@ -470,58 +447,48 @@ def run_ios():
                 print("Xcode components installed successfully")
             except subprocess.CalledProcessError as setup_error:
                 print(f"Xcode first launch failed: {setup_error}")
-                response = input("Continue anyway? (y/n): ").strip().lower()
-                if response != "y":
+                if input("Continue anyway? (y/n): ").strip().lower() != "y":
                     return
         else:
-            print(f"Xcode check failed with different error: {error_output}")
+            print(f"Xcode check failed with different error: {err}")
             print("Continuing with iOS setup...")
 
     print("Preparing iOS development...")
 
-    # 3) Ensure native projects exist (RN init copy, npm i, pods)
+    # Ensure native projects (and pods) are ready
     if not ensure_native_projects(custom_env=env, project_name=native_name):
         print("Failed to set up iOS project.")
         return
-    
-    # Keep JS/native names aligned and ensure pods even if project already existed
     sync_js_app_name(BUILD_DIR, native_name)
     ensure_ios_pods(ios_dir, env)
 
-    # 4) Ensure we have simulators (and offer to download a runtime if none)
+    # Simulators
     print("Checking for iOS simulators...")
     try:
-        result = subprocess.run(
-            ["xcrun", "simctl", "list", "devices", "available"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        result = subprocess.run(["xcrun", "simctl", "list", "devices", "available"],
+                                capture_output=True, text=True, check=True)
         lines = result.stdout.split("\n")
-        ios_simulators, in_ios_section = [], False
+        ios_simulators, in_ios = [], False
         for line in lines:
             if line.strip().startswith("-- iOS"):
-                in_ios_section = True
+                in_ios = True
                 continue
             elif line.strip().startswith("--") and "iOS" not in line:
-                in_ios_section = False
+                in_ios = False
                 continue
-            elif in_ios_section and line.strip() and "(" in line and ")" in line:
+            elif in_ios and line.strip() and "(" in line and ")" in line:
                 ios_simulators.append(line.strip())
-
         if not ios_simulators:
             print("No iOS simulators found.")
-            response = input("Download an iOS Simulator runtime now? (y/n): ").strip().lower()
-            if response == "y":
+            if input("Download an iOS Simulator runtime now? (y/n): ").strip().lower() == "y":
                 try:
                     print("Downloading iOS platform (this may take a while)...")
                     subprocess.run(["xcodebuild", "-downloadPlatform", "iOS"], check=True, text=True)
                     print("iOS platform downloaded successfully")
-                except subprocess.CalledProcessError as download_error:
-                    print(f"Failed to download iOS platform automatically: {download_error}")
+                except subprocess.CalledProcessError as dl_err:
+                    print(f"Failed to download iOS platform automatically: {dl_err}")
                     print("Open Xcode → Settings → Platforms → download an iOS runtime.")
-                    response = input("Continue anyway? (y/n): ").strip().lower()
-                    if response != "y":
+                    if input("Continue anyway? (y/n): ").strip().lower() != "y":
                         return
         else:
             print(f"Found {len(ios_simulators)} iOS simulator(s)")
@@ -530,7 +497,6 @@ def run_ios():
     except Exception as e:
         print(f"Error checking simulators: {e}. Continuing anyway...")
 
-    # 5) Avoid boot conflicts
     print("Preparing simulators...")
     try:
         subprocess.run(["xcrun", "simctl", "shutdown", "all"], capture_output=True, check=True)
@@ -538,30 +504,41 @@ def run_ios():
     except subprocess.CalledProcessError:
         pass
 
-    # 6) Launch via RN CLI using the selected Node env
-    try:
-        print("Starting iOS simulator...")
-        subprocess.run(["npx", "react-native", "run-ios"], cwd=BUILD_DIR, check=True, env=env)
-    except subprocess.CalledProcessError as e:
-        print("Failed to start iOS simulator.")
-        error_output = e.stderr or str(e)
-
-        if "DVTDownloads.framework" in error_output or "IDESimulatorFoundation" in error_output:
-            print("\nXcode Framework Issue Detected:")
-            print("Run this to fix Xcode components:")
-            print("  sudo xcodebuild -runFirstLaunch")
-        elif "styleText is not a function" in error_output:
-            print("\nNode/RN CLI cache issue:")
-            print("1) Ensure Node is selected by this tool (ensure_node_env)")
-            print("2) npm cache clean --force")
-            print("3) rm -rf build/node_modules && (cd build && npm install)")
-        else:
-            print("\nTroubleshooting steps:")
-            print("1) sudo xcodebuild -runFirstLaunch")
-            print("2) Ensure iOS Simulator is installed in Xcode")
-            print("3) Try: (cd build && npx react-native run-ios)")
-            print("4) Or open build/ios/*.xcworkspace in Xcode and build there")
-            print("5) https://reactnative.dev/docs/set-up-your-environment")
+    # Backend behavior parity with web
+    backend_enabled = getattr(settings, "BACKEND", True)
+    if backend_enabled:
+        print("Starting iOS (in background) + backend dev server...")
+        try:
+            ios_proc = subprocess.Popen(["npx", "react-native", "run-ios"], cwd=BUILD_DIR, env=env)
+            spawned_processes.append(ios_proc)
+        except Exception as e:
+            print(f"Failed to launch iOS build: {e}")
+            return
+        # Run backend watcher in foreground (keeps this process alive)
+        run_uvicorn_with_watch(port)
+    else:
+        # No backend: run iOS and block like before
+        try:
+            print("Starting iOS simulator...")
+            subprocess.run(["npx", "react-native", "run-ios"], cwd=BUILD_DIR, check=True, env=env)
+        except subprocess.CalledProcessError as e:
+            print("Failed to start iOS simulator.")
+            error_output = e.stderr or str(e)
+            if "DVTDownloads.framework" in error_output or "IDESimulatorFoundation" in error_output:
+                print("\nXcode Framework Issue Detected:")
+                print("  sudo xcodebuild -runFirstLaunch")
+            elif "styleText is not a function" in error_output:
+                print("\nNode/RN CLI cache issue:")
+                print("1) ensure_node_env selected your Node")
+                print("2) npm cache clean --force")
+                print("3) rm -rf build/node_modules && (cd build && npm install)")
+            else:
+                print("\nTroubleshooting steps:")
+                print("1) sudo xcodebuild -runFirstLaunch")
+                print("2) Ensure iOS Simulator is installed in Xcode")
+                print("3) Try: (cd build && npx react-native run-ios)")
+                print("4) Or open build/ios/*.xcworkspace in Xcode and build there")
+                print("5) https://reactnative.dev/docs/set-up-your-environment")
 
 
 def run_android():
@@ -895,6 +872,14 @@ def repair_ios(build_dir=BUILD_DIR):
     subprocess.run(['rm', '-f', os.path.join(ios_dir, 'Podfile.lock')])
     subprocess.run(['pod', 'install'], cwd=ios_dir, check=False)
 
+# Unclear why these folders are being created - I should find a more elegant fix later
+def _clean_empty_shadow_dirs(root):
+    for d in ("app2", "build2"):
+        p = os.path.join(root, d)
+        if os.path.isdir(p) and not os.listdir(p):
+            shutil.rmtree(p, ignore_errors=True)
+            print(f"Removed empty shadow dir: {d}")
+
 # -----------------------------------------------------------------------------
 # CLI entrypoint
 # -----------------------------------------------------------------------------
@@ -912,6 +897,8 @@ def main():
         parser.add_argument("--api", action="store_true", help="Create API-only app without React Native frontend")
         parser.add_argument("--web-only", action="store_true", help="Run web without backend")
         args = parser.parse_args()
+
+        _clean_empty_shadow_dirs(PROJECT_ROOT)
 
         if args.command == "new":
             if args.name:
@@ -932,7 +919,7 @@ def main():
                 run_command_logic(port=args.port)
 
         elif args.command == "ios":
-            run_ios()
+            run_ios(args.port)
 
         elif args.command == "android":
             run_android()
