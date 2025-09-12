@@ -148,7 +148,7 @@ def create_package_json(app_name: str, project_dir: Path):
             "react-native-gesture-handler": "^2.16.2",
             "react-native-safe-area-context": "^5.6.1",
             "react-native-screens": "^4.6.0",
-            "react-strict-dom": "^0.0.44"
+            "react-strict-dom": "^0.0.44",
         },
         "devDependencies": {
             "@babel/core": "^7.24.0",
@@ -161,6 +161,10 @@ def create_package_json(app_name: str, project_dir: Path):
             "@react-native/metro-config": "0.81.1",
 
             "@stylexjs/babel-plugin": "^0.8.0",
+
+            "@react-native-community/cli": "^20.0.2",
+            "@react-native-community/cli-platform-ios": "^20.0.2",
+            "@react-native-community/cli-platform-android": "^20.0.2",
 
             # Web bundling
             "webpack": "^5.88.0",
