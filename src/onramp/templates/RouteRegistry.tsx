@@ -99,7 +99,10 @@ function LoadingScreen() {
       display: 'flex',
       justifyContent: 'center',
       alignItems: 'center',
-      minHeight: '100vh',
+      flex: 1,
+      boxSizing: 'border-box',
+      height: '100%',
+      width: '100%',
       fontFamily: 'system-ui, -apple-system, sans-serif'
     }}>
       <html.div style={{
@@ -129,7 +132,10 @@ function NotFoundScreen({ path }: { path: string }) {
       display: 'flex',
       justifyContent: 'center',
       alignItems: 'center',
-      minHeight: '100vh',
+      flex: 1,
+      boxSizing: 'border-box',
+      height: '100%',
+      width: '100%',
       fontFamily: 'system-ui, -apple-system, sans-serif',
       backgroundColor: '#f5f5f5'
     }}>

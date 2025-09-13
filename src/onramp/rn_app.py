@@ -283,6 +283,9 @@ def create_web_index_html(project_dir: Path):
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>OnRamp App</title>
+  <style>
+    html, body, #root { height: 100%; margin: 0; }
+  </style>
 </head>
 <body>
   <div id="root"></div>
@@ -451,7 +454,9 @@ export default function HomePage() {
 
   return (
     <html.div style={{
-      minHeight: '100vh',
+      flex: 1,
+      boxSizing: 'border-box',
+      height: '100%',
       width: '100%',
       display: 'flex',
       padding: 20,
@@ -505,7 +510,9 @@ export default function ProfilePage({ id }) {
     <html.div style={{
       padding: 20,
       fontFamily: 'system-ui, -apple-system, sans-serif',
-      minHeight: '100vh',
+      flex: 1,
+      boxSizing: 'border-box',
+      height: '100%',
       backgroundColor: '#f5f5f5'
     }}>
       <html.div style={{
@@ -547,7 +554,9 @@ export default function AboutPage() {
     <html.div style={{
       padding: 20,
       fontFamily: 'system-ui, -apple-system, sans-serif',
-      minHeight: '100vh',
+      flex: 1,
+      boxSizing: 'border-box',
+      height: '100%',
       backgroundColor: '#f5f5f5'
     }}>
       <html.div style={{
