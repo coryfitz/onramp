@@ -880,6 +880,69 @@ def _clean_empty_shadow_dirs(root):
             shutil.rmtree(p, ignore_errors=True)
             print(f"Removed empty shadow dir: {d}")
 
+def handle_del(args):
+    """Delete a direct child directory of the current working directory, without prompts."""
+    name = (args.name or "").strip()
+    if not name:
+        print("Usage: onramp del <dirname>")
+        return 1
+
+    # Safety: only simple folder names (no slashes) to avoid arbitrary paths
+    if os.sep in name or (os.altsep and os.altsep in name):
+        print("Refusing: provide just a folder name (no slashes).")
+        return 1
+
+    target = os.path.abspath(os.path.join(PROJECT_ROOT, name))
+
+    # Must exist and be a directory
+    if not os.path.exists(target):
+        print(f"No such file or directory: {name}")
+        return 1
+    if not os.path.isdir(target):
+        print(f"Refusing: {name} is not a directory.")
+        return 1
+
+    # Must be a direct child of the cwd (avoid deleting siblings elsewhere)
+    if os.path.dirname(target) != PROJECT_ROOT:
+        print("Refusing: target must be a direct child of the current directory.")
+        return 1
+
+    # Never delete if the current process is inside that directory
+    cwd = os.path.abspath(os.getcwd())
+    if cwd == target or cwd.startswith(target + os.sep):
+        print("Refusing: current working directory is inside the target.")
+        return 1
+
+    # Extra guardrails
+    protected = {"/", os.path.expanduser("~")}
+    if target in protected:
+        print("Refusing: protected path.")
+        return 1
+
+    try:
+        if platform.system() == "Windows":
+            # Windows fallback: Python rmtree (best-effort permission handling)
+            import stat
+            def _onerror(func, path, exc_info):
+                try:
+                    os.chmod(path, stat.S_IWRITE)
+                except Exception:
+                    pass
+                func(path)
+            shutil.rmtree(target, onerror=_onerror)
+        else:
+            # macOS/Linux: use rm -rf semantics explicitly
+            res = subprocess.run(["rm", "-rf", "--", target])
+            if res.returncode != 0:
+                print(f"Failed to delete {name} (rm exit {res.returncode})")
+                return res.returncode
+        print(f"✓ Deleted {name}")
+        return 0
+    except Exception as e:
+        print(f"Delete failed: {e}")
+        return 1
+
+
 # -----------------------------------------------------------------------------
 # CLI entrypoint
 # -----------------------------------------------------------------------------
@@ -935,6 +998,9 @@ def main():
         
         elif args.command == "repair:ios":
             repair_ios()
+
+        elif args.command == "del":
+            return handle_del(args)
 
         else:
             print(f"Invalid command. Available commands:")

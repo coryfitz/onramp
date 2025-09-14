@@ -1,5 +1,5 @@
 // Route registry and component loader
-import React, { Suspense, lazy, ComponentType, useState, useEffect } from 'react';
+import React, { lazy, ComponentType, useState, useEffect } from 'react';
 import { routes, routeComponents } from '../generated/routes';
 import { html } from 'react-strict-dom';
 
@@ -95,31 +95,20 @@ export const routeRegistry = new RouteRegistry();
 // Loading component
 function LoadingScreen() {
   return (
-    <html.div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      flex: 1,
-      boxSizing: 'border-box',
-      height: '100%',
-      width: '100%',
-      fontFamily: 'system-ui, -apple-system, sans-serif'
-    }}>
-      <html.div style={{
-        textAlign: 'center'
-      }}>
-        <html.div style={{
-          fontSize: 18,
-          marginBottom: 8
-        }}>
-          Loading...
-        </html.div>
-        <html.div style={{
-          fontSize: 14,
-          color: '#666'
-        }}>
-          Please wait
-        </html.div>
+    <html.div
+      style={{
+        position: 'absolute',
+        top: 0, right: 0, bottom: 0, left: 0, // fill
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        // optional: backgroundColor: '#f5f5f5',
+      }as any}
+    >
+      <html.div style={{ textAlign: 'center' }as any}>
+        <html.div style={{ fontSize: 18, marginBottom: 8 }as any}>Loading...</html.div>
+        <html.div style={{ fontSize: 14, color: '#666' }as any}>Please wait</html.div>
       </html.div>
     </html.div>
   );
@@ -128,54 +117,39 @@ function LoadingScreen() {
 // 404 Not Found component
 function NotFoundScreen({ path }: { path: string }) {
   return (
-    <html.div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      flex: 1,
-      boxSizing: 'border-box',
-      height: '100%',
-      width: '100%',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      backgroundColor: '#f5f5f5'
-    }}>
-      <html.div style={{
-        textAlign: 'center',
-        backgroundColor: 'white',
-        padding: 40,
-        borderRadius: 12,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        maxWidth: 500
-      }}>
-        <html.h1 style={{
-          fontSize: 48,
-          margin: 0,
-          marginBottom: 16,
-          color: '#333'
-        }}>
+    <html.div
+      style={{
+        position: 'absolute',
+        top: 0, right: 0, bottom: 0, left: 0, // fill
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        backgroundColor: '#f5f5f5',
+      }as any}
+    >
+      <html.div
+        style={{
+          textAlign: 'center',
+          backgroundColor: 'white',
+          padding: 40,
+          borderRadius: 12,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          maxWidth: 500,
+          alignSelf: 'center',
+        }as any}
+      >
+        <html.h1 style={{ fontSize: 48, margin: 0, marginBottom: 16, color: '#333' }as any}>
           404
         </html.h1>
-        <html.h2 style={{
-          fontSize: 24,
-          margin: 0,
-          marginBottom: 16,
-          color: '#666'
-        }}>
+        <html.h2 style={{ fontSize: 24, margin: 0, marginBottom: 16, color: '#666' }as any}>
           Page Not Found
         </html.h2>
-        <html.p style={{
-          fontSize: 16,
-          color: '#888',
-          marginBottom: 24
-        }}>
+        <html.p style={{ fontSize: 16, color: '#888', marginBottom: 24 }as any}>
           The page "{path}" could not be found.
         </html.p>
-        <html.button 
-          onClick={() => {
-            if (typeof window !== 'undefined') {
-              window.location.href = '/';
-            }
-          }}
+        <html.button
+          onClick={() => { if (typeof window !== 'undefined') window.location.href = '/'; }}
           style={{
             padding: '12px 24px',
             backgroundColor: '#007AFF',
@@ -183,8 +157,8 @@ function NotFoundScreen({ path }: { path: string }) {
             border: 'none',
             borderRadius: 8,
             fontSize: 16,
-            cursor: 'pointer'
-          }}
+            cursor: 'pointer',
+          }as any}
         >
           Go Home
         </html.button>
@@ -254,7 +228,7 @@ export function RouteComponent({ path, params = {} }: RouteComponentProps) {
         padding: 20,
         color: 'red',
         fontFamily: 'system-ui, -apple-system, sans-serif'
-      }}>
+      } as any }>
         <html.h2>Error Loading Route</html.h2>
         <html.p>{error}</html.p>
       </html.div>

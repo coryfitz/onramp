@@ -284,8 +284,9 @@ def create_web_index_html(project_dir: Path):
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>OnRamp App</title>
   <style>
-    html, body, #root { height: 100%; margin: 0; }
-  </style>
+  html, body, #root { height: 100%; margin: 0; }
+  #root { display: flex; flex-direction: column; }
+</style>
 </head>
 <body>
   <div id="root"></div>
@@ -453,44 +454,55 @@ export default function HomePage() {
   const { navigate } = useNavigation();
 
   return (
-    <html.div style={{
-      flex: 1,
-      boxSizing: 'border-box',
-      height: '100%',
-      width: '100%',
-      display: 'flex',
-      padding: 20,
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      backgroundColor: '#f5f5f5',
-      justifyContent: 'center',
-      alignItems: 'center'
-    } as any}>
-      <html.div style={{
-        backgroundColor: 'white',
-        padding: 30,
-        borderRadius: 12,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        maxWidth: 500,
-        width: '100%'
-      } as any}>
-        <html.h1 style={{ fontSize: 24, color: '#333', marginBottom: 16, fontWeight: 'bold', textAlign: 'center' } as any}>
-          Welcome to OnRamp
-        </html.h1>
-        <html.h2 style={{ fontSize: 19, color: '#333', marginBottom: 16, fontWeight: 'bold', textAlign: 'center' } as any}>
-          The Python App Framework
-        </html.h2>
-        <html.div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexDirection: 'column' } as any}>
-          <html.button 
-            onClick={() => navigate('/profile/123')}
-            style={{ padding: '10px 20px', backgroundColor: '#007AFF', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' } as any}
-          >Go to Profile</html.button>
-          <html.button 
-            onClick={() => navigate('/about')}
-            style={{ padding: '10px 20px', backgroundColor: '#34C759', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' } as any}
-          >About Page</html.button>
-        </html.div>
-      </html.div>
+    <html.div
+  style={{
+    flex: 1,
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    backgroundColor: '#f5f5f5',
+  } as any}
+>
+  <html.div
+    style={{
+      backgroundColor: 'white',
+      padding: 30,
+      borderRadius: 12,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+      maxWidth: 500,
+      alignSelf: 'center',   // center horizontally without width:'100%'
+      // If you prefer the card to stretch on small screens, use:
+      // alignSelf: 'stretch',
+    } as any}
+  >
+    <html.h1
+      style={{ fontSize: 24, color: '#333', marginBottom: 16, fontWeight: 'bold', textAlign: 'center' } as any}
+    >
+      Welcome to OnRamp
+    </html.h1>
+    <html.h2
+      style={{ fontSize: 19, color: '#333', marginBottom: 16, fontWeight: 'bold', textAlign: 'center' } as any}
+    >
+      The Python App Framework
+    </html.h2>
+    <html.div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexDirection: 'column' } as any}>
+      <html.button
+        onClick={() => navigate('/profile/123')}
+        style={{ padding: '10px 20px', backgroundColor: '#007AFF', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' } as any}
+      >
+        Go to Profile
+      </html.button>
+      <html.button
+        onClick={() => navigate('/about')}
+        style={{ padding: '10px 20px', backgroundColor: '#34C759', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' } as any}
+      >
+        About Page
+      </html.button>
     </html.div>
+  </html.div>
+</html.div>
   );
 }
 '''
@@ -511,29 +523,27 @@ export default function ProfilePage({ id }) {
       padding: 20,
       fontFamily: 'system-ui, -apple-system, sans-serif',
       flex: 1,
-      boxSizing: 'border-box',
-      height: '100%',
       backgroundColor: '#f5f5f5'
-    }}>
+    }as any}>
       <html.div style={{
         backgroundColor: 'white',
         padding: 30,
         borderRadius: 12,
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
         maxWidth: 600
-      }}>
+      }as any}>
         <html.h1 style={{ color: '#333', marginBottom: 16 }}>Profile Page</html.h1>
         <html.p style={{ color: '#666', marginBottom: 20 }}>Profile ID: {id || 'No ID provided'}</html.p>
         <html.div style={{ display: 'flex', gap: 10 }}>
           {canGoBack() && (
             <html.button 
               onClick={goBack}
-              style={{ padding: '10px 20px', backgroundColor: '#666', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+              style={{ padding: '10px 20px', backgroundColor: '#666', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }as any}
             >Go Back</html.button>
           )}
           <html.button 
             onClick={() => navigate('/')}
-            style={{ padding: '10px 20px', backgroundColor: '#007AFF', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+            style={{ padding: '10px 20px', backgroundColor: '#007AFF', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }as any}
           >Home</html.button>
         </html.div>
       </html.div>
@@ -555,29 +565,27 @@ export default function AboutPage() {
       padding: 20,
       fontFamily: 'system-ui, -apple-system, sans-serif',
       flex: 1,
-      boxSizing: 'border-box',
-      height: '100%',
       backgroundColor: '#f5f5f5'
-    }}>
+    }as any}>
       <html.div style={{
         backgroundColor: 'white',
         padding: 30,
         borderRadius: 12,
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
         maxWidth: 600
-      }}>
-        <html.h1 style={{ color: '#333', marginBottom: 16 }}>About OnRamp</html.h1>
-        <html.p style={{ color: '#666', marginBottom: 20 }}>
+      }as any}>
+        <html.h1 style={{ color: '#333', marginBottom: 16 }as any}>About OnRamp</html.h1>
+        <html.p style={{ color: '#666', marginBottom: 20 }as any}>
           OnRamp is a modern framework for building cross-platform applications with React Native and React Strict DOM.
         </html.p>
-        <html.div style={{ display: 'flex', gap: 10 }}>
+        <html.div style={{ display: 'flex', gap: 10 }as any}>
           <html.button 
             onClick={goBack}
-            style={{ padding: '10px 20px', backgroundColor: '#666', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+            style={{ padding: '10px 20px', backgroundColor: '#666', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }as any}
           >Go Back</html.button>
           <html.button 
             onClick={() => navigate('/')}
-            style={{ padding: '10px 20px', backgroundColor: '#007AFF', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+            style={{ padding: '10px 20px', backgroundColor: '#007AFF', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }as any}
           >Home</html.button>
         </html.div>
       </html.div>
