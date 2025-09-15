@@ -2,135 +2,202 @@
 const fs = require('fs');
 const path = require('path');
 
-function generateRoutes(appDir = 'app') {
-  const routes = [];
-  
-  function scanDirectory(dir, basePath = '') {
-    if (!fs.existsSync(dir)) {
-      console.log(`Directory ${dir} does not exist, creating basic route structure`);
-      return routes;
-    }
-    
-    const files = fs.readdirSync(dir);
-    
-    for (const file of files) {
-      const filePath = path.join(dir, file);
-      const stat = fs.statSync(filePath);
-      
+function getPlatform() {
+  // Allow explicit override (handy for CI)
+  if (process.env.ONRAMP_PLATFORM) return process.env.ONRAMP_PLATFORM;
+
+  // Heuristics:
+  const nlel = (process.env.npm_lifecycle_event || '').toLowerCase();
+
+  // Web: our dev server script is `start:web`, and webpack serve/build is only used on web.
+  if (nlel.includes('start:web') || process.env.WEBPACK_SERVE || process.env.WEBPACK_DEV_SERVER) {
+    return 'web';
+  }
+
+  // iOS / Android: common lifecycles started by RN CLI or wrappers
+  if (nlel.includes('ios')) return 'ios';
+  if (nlel.includes('android')) return 'android';
+
+  // When Metro is started directly (e.g. `start:native`) treat as generic native
+  return 'native';
+}
+
+function extOrderFor(platform) {
+  switch (platform) {
+    case 'web':
+      return ['.web.tsx', '.web.ts', '.tsx', '.ts', '.web.jsx', '.jsx', '.web.js', '.js'];
+    case 'ios':
+      return ['.ios.tsx', '.ios.ts', '.native.tsx', '.native.ts', '.tsx', '.ts', '.ios.jsx', '.native.jsx', '.jsx', '.ios.js', '.native.js', '.js'];
+    case 'android':
+      return ['.android.tsx', '.android.ts', '.native.tsx', '.native.ts', '.tsx', '.ts', '.android.jsx', '.native.jsx', '.jsx', '.android.js', '.native.js', '.js'];
+    case 'native':
+    default:
+      return ['.native.tsx', '.native.ts', '.tsx', '.ts', '.native.jsx', '.jsx', '.native.js', '.js'];
+  }
+}
+
+function isPageFile(file) {
+  // Page components only: .ts/.tsx/.js/.jsx
+  return /\.(tsx|ts|jsx|js)$/.test(file);
+}
+
+// Turn a file path inside app/ into a route path.
+// e.g. "app/about.tsx" -> "/about"
+//      "app/profile/[id].tsx" -> "/profile/:id"
+//      "app/index.tsx" -> "/index" (we will also alias "/" later)
+function toRoutePath(appRelFile) {
+  const noExt = appRelFile.replace(/\.(tsx|ts|jsx|js)$/, '');
+
+  // Normalize segments and convert bracket params to :params
+  const segments = noExt.split(path.sep).map(s => {
+    if (s === 'index' && noExt !== 'index') return 'index'; // keep explicit "index" for aliasing
+    if (/^\[.+\]$/.test(s)) return `:${s.slice(1, -1)}`;
+    return s;
+  });
+
+  if (segments.length === 1 && segments[0] === 'index') {
+    return '/index';
+  }
+  return '/' + segments.join('/').replace(/\/index$/, '/index'); // keep explicit /index
+}
+
+// Prefer the correct platform variant for a given logical page (route "stem")
+function resolvePlatformFile(variants, platform) {
+  const order = extOrderFor(platform);
+  for (const ext of order) {
+    const match = variants.find(v => v.endsWith(ext));
+    if (match) return match;
+  }
+  return null;
+}
+
+// Scan app/ and group logical pages by stem (e.g., "about", "profile/[id]")
+function scanApp(appDir) {
+  const all = [];
+  const walk = dir => {
+    for (const name of fs.readdirSync(dir)) {
+      const full = path.join(dir, name);
+      const stat = fs.statSync(full);
       if (stat.isDirectory()) {
-        // Handle layout groups like (tabs)
-        if (file.startsWith('(') && file.endsWith(')')) {
-          const groupName = file.slice(1, -1);
-          scanDirectory(filePath, basePath);
-        } else {
-          scanDirectory(filePath, path.join(basePath, file));
-        }
-      } else if (file.endsWith('.tsx') || file.endsWith('.ts')) {
-        const routePath = generateRoutePath(filePath, basePath, file);
-        const componentPath = path.relative(process.cwd(), filePath);
-        
-        if (routePath !== null) { // Only add routes that have paths
-          routes.push({
-            path: routePath,
-            componentPath,
-            isLayout: file === '_layout.tsx',
-            isDynamic: file.includes('[') && file.includes(']'),
-            params: extractParams(file)
-          });
-        }
+        walk(full);
+      } else if (isPageFile(name)) {
+        // Store path relative to app/
+        all.push(path.relative(appDir, full));
       }
     }
+  };
+  walk(appDir);
+
+  // Group by "stem" (remove extension)
+  const byStem = new Map();
+  for (const rel of all) {
+    const stem = rel.replace(/\.(tsx|ts|jsx|js)$/, '');
+    if (!byStem.has(stem)) byStem.set(stem, []);
+    byStem.get(stem).push(rel);
   }
-  
-  scanDirectory(appDir);
-  return routes;
+  return byStem;
 }
 
-function generateRoutePath(filePath, basePath, fileName) {
-  // Convert file path to route path
-  if (fileName === 'index.tsx' || fileName === 'index.ts') {
-    return basePath === '' ? '/' : `/${basePath}`;
-  }
-  
-  if (fileName === '_layout.tsx' || fileName === '_layout.ts') {
-    return null; // Layouts don't create routes
-  }
-  
-  const name = fileName.replace(/\.(tsx|ts)$/, '');
-  
-  // Handle dynamic routes [id] -> :id
-  const dynamicName = name.replace(/\[(.+)\]/g, ':$1');
-  
-  return path.join('/', basePath, dynamicName).replace(/\\/g, '/');
+function isDynamicRoute(routePath) {
+  return routePath.split('/').some(seg => seg.startsWith(':'));
 }
 
-function extractParams(fileName) {
-  const matches = fileName.match(/\[([^\]]+)\]/g);
-  return matches ? matches.map(match => match.slice(1, -1)) : [];
+// Build the import specifier relative to src/generated/routes.ts
+function buildImportPath(projectRoot, chosenRelFromApp) {
+  // routes.ts is at "<root>/src/generated/routes.ts"
+  // our files are at "<root>/app/<...>"
+  // so relative path should be "../../app/<...>" (posix-style for consistency)
+  const from = path.join(projectRoot, 'src', 'generated', 'routes.ts');
+  const target = path.join(projectRoot, 'app', chosenRelFromApp);
+  let rel = path.relative(path.dirname(from), target);
+  // Drop extension for cleaner dynamic import and compatibility
+  rel = rel.replace(/\.(tsx|ts|jsx|js)$/, '');
+  return rel.split(path.sep).join('/'); // posix separators
 }
 
-// Generate the routes configuration file
-function generateRoutesConfig(outputPath = 'src/generated/routes.ts') {
-  const routes = generateRoutes();
-  
-  // Ensure we have at least one route
-  if (routes.length === 0) {
-    console.log('No routes found, creating default home route');
+function generateRoutesConfig() {
+  const projectRoot = process.cwd();
+  const appDir = path.join(projectRoot, 'app');
+  const outDir = path.join(projectRoot, 'src', 'generated');
+  const outFile = path.join(outDir, 'routes.ts');
+
+  if (!fs.existsSync(appDir)) {
+    console.error(`No "app" directory found at ${appDir}`);
+    process.exit(1);
+  }
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+  const platform = getPlatform();
+  const byStem = scanApp(appDir);
+
+  const routes = [];
+  const routeComponents = {};
+
+  // Helper to push a route
+  const addRoute = (routePath, importPath) => {
+    const isDyn = isDynamicRoute(routePath);
+    // Use the importPath (without extension) as a stable component key
+    const componentKey = importPath;
+
+    if (!routeComponents[componentKey]) {
+      routeComponents[componentKey] = `() => import('${importPath}')`;
+    }
+
     routes.push({
-      path: '/',
-      componentPath: 'app/index.tsx',
-      isLayout: false,
-      isDynamic: false,
-      params: []
+      path: routePath,
+      componentPath: componentKey,
+      isDynamic: isDyn,
     });
+  };
+
+  // Pass 1: generate entries for all pages that exist for the current platform
+  for (const [stem, files] of byStem) {
+    // Choose the best file for this platform
+    const chosen = resolvePlatformFile(files, platform);
+    if (!chosen) {
+      // If there is no platform-appropriate or base file, skip and warn
+      console.warn(
+        `[routes] Skipping "${stem}" for platform "${platform}" (no matching file among: ${files.join(
+          ', '
+        )})`
+      );
+      continue;
+    }
+
+    const routePath = toRoutePath(chosen); // chosen is app-relative with extension
+    const importPath = buildImportPath(projectRoot, chosen); // path without extension
+
+    addRoute(routePath, importPath);
+
+    // If this is "/index", also add "/" using the exact same importPath
+    if (routePath === '/index') {
+      addRoute('/', importPath);
+    }
   }
-  
-  const configContent = `// Auto-generated routes configuration
-// Do not edit this file manually
 
-export interface RouteConfig {
-  path: string;
-  componentPath: string;
-  isDynamic: boolean;
-  params: string[];
-  isLayout?: boolean;
-}
+  // Sort routes so "/" comes first, then static, then dynamic; helps your registry’s first-match check
+  routes.sort((a, b) => {
+    if (a.path === '/' && b.path !== '/') return -1;
+    if (b.path === '/' && a.path !== '/') return 1;
+    if (a.isDynamic && !b.isDynamic) return 1;
+    if (b.isDynamic && !a.isDynamic) return -1;
+    return a.path.localeCompare(b.path);
+  });
 
-export const routes: RouteConfig[] = ${JSON.stringify(routes, null, 2)};
+  // Emit file
+  const file =
+    `// AUTO-GENERATED by generateRoutes.js — do not edit\n` +
+    `// Platform: ${platform}\n` +
+    `export const routes = ${JSON.stringify(routes, null, 2)} as const;\n\n` +
+    `export const routeComponents: Record<string, () => Promise<any>> = {\n` +
+    Object.entries(routeComponents)
+      .map(([k, v]) => `  ${JSON.stringify(k)}: ${v},`)
+      .join('\n') +
+    `\n};\n`;
 
-// Dynamic imports for code splitting
-export const routeComponents = {
-${generateDynamicImports(routes)}
-};
-`;
-
-  // Ensure output directory exists
-  const outputDir = path.dirname(outputPath);
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
-
-  fs.writeFileSync(outputPath, configContent);
-  console.log(`Generated routes configuration at ${outputPath}`);
+  fs.writeFileSync(outFile, file, 'utf8');
+  console.log(`Generated routes configuration at src/generated/routes.ts`);
   console.log(`Found ${routes.length} routes`);
 }
 
-function generateDynamicImports(routes) {
-  if (!Array.isArray(routes)) {
-    console.error('Routes is not an array:', routes);
-    return '';
-  }
-  
-  return routes
-    .filter(route => route.componentPath && !route.isLayout)
-    .map(route => {
-      const key = route.componentPath.replace(/[^a-zA-Z0-9]/g, '_');
-      return `  '${route.componentPath}': () => import('../../${route.componentPath}')`;
-    })
-    .join(',\n');
-}
-
-module.exports = {
-  generateRoutes,
-  generateRoutesConfig
-};
+module.exports = { generateRoutesConfig };

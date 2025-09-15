@@ -1,181 +1,102 @@
-// Full navigation provider without Solito dependency
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { routes, routeComponents } from '../generated/routes';
+// src/navigation/NavigationProvider.tsx
+import React, { createContext, useContext, useMemo, useRef, useEffect, useState } from 'react';
 
-// Platform detection that works across web and native
-const Platform = {
-  OS: typeof window !== 'undefined' ? 'web' : 'native'
-};
-
-interface NavigationContextType {
+type NavAPI = {
   currentRoute: string;
   params: Record<string, any>;
   navigate: (path: string, params?: Record<string, any>) => void;
   goBack: () => void;
   canGoBack: () => boolean;
+};
+
+const NavigationContext = createContext<NavAPI | null>(null);
+
+function isWeb() {
+  return typeof window !== 'undefined' && typeof document !== 'undefined';
 }
 
-const NavigationContext = createContext<NavigationContextType | null>(null);
-
-interface NavigationProviderProps {
+export function NavigationProvider({
+  children,
+  initialRoute = '/',
+}: {
   children: React.ReactNode;
   initialRoute?: string;
-}
+}) {
+  // On web, hydrate from the real URL. On native, use provided initialRoute.
+  const initialPath = isWeb() ? (window.location.pathname || '/') : initialRoute;
 
-export function NavigationProvider({ children, initialRoute = '/' }: NavigationProviderProps) {
-  const [currentRoute, setCurrentRoute] = useState(initialRoute);
-  const [params, setParams] = useState<Record<string, any>>({});
-  const [history, setHistory] = useState<string[]>([initialRoute]);
+  const [currentRoute, setCurrentRoute] = useState<string>(initialPath);
+  const paramsRef = useRef<Record<string, any>>({});
+  const stackRef = useRef<string[]>([initialPath]); // used mainly for native
 
-  // Handle browser back/forward on web
+  // Keep route in sync with browser back/forward on web
   useEffect(() => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const handlePopState = () => {
-        const path = window.location.pathname;
-        const matchedRoute = matchRoute(path);
-        if (matchedRoute) {
-          setCurrentRoute(path);
-          setParams(matchedRoute.params);
-        }
-      };
-
-      window.addEventListener('popstate', handlePopState);
-      
-      // Set initial route from URL
-      const initialPath = window.location.pathname;
-      if (initialPath !== initialRoute) {
-        const matchedRoute = matchRoute(initialPath);
-        if (matchedRoute) {
-          setCurrentRoute(initialPath);
-          setParams(matchedRoute.params);
-        }
-      }
-
-      return () => window.removeEventListener('popstate', handlePopState);
-    }
+    if (!isWeb()) return;
+    const onPop = () => {
+      const path = window.location.pathname || '/';
+      paramsRef.current = {}; // popstate doesn’t carry params
+      setCurrentRoute(path);
+      // keep a simple stack in sync (best-effort)
+      stackRef.current.push(path);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  const matchRoute = (path: string) => {
-    // First try exact match
-    const exactRoute = routes.find(route => route.path === path);
-    if (exactRoute) {
-      return { route: exactRoute, params: {} };
-    }
+  const navigate = (path: string, params: Record<string, any> = {}) => {
+    paramsRef.current = params;
 
-    // Try dynamic routes
-    for (const route of routes) {
-      if (route.isDynamic) {
-        const params = matchDynamicRoute(path, route.path);
-        if (params) {
-          return { route, params };
-        }
+    if (isWeb()) {
+      // pushState keeps the URL bar in sync; RouteRegistry will decide if it exists or 404.
+      if (window.location.pathname !== path) {
+        window.history.pushState({}, '', path);
       }
-    }
-
-    return null;
-  };
-
-  const matchDynamicRoute = (pathname: string, routePath: string) => {
-    const pathSegments = pathname.split('/').filter(Boolean);
-    const routeSegments = routePath.split('/').filter(Boolean);
-
-    if (pathSegments.length !== routeSegments.length) {
-      return null;
-    }
-
-    const params: Record<string, string> = {};
-
-    for (let i = 0; i < routeSegments.length; i++) {
-      const routeSegment = routeSegments[i];
-      const pathSegment = pathSegments[i];
-
-      if (routeSegment.startsWith(':')) {
-        // Dynamic segment
-        const paramName = routeSegment.slice(1);
-        params[paramName] = pathSegment;
-      } else if (routeSegment !== pathSegment) {
-        // Static segment doesn't match
-        return null;
-      }
-    }
-
-    return params;
-  };
-
-  const navigate = (path: string, newParams: Record<string, any> = {}) => {
-    const matchedRoute = matchRoute(path);
-    if (!matchedRoute) {
-      console.warn(`No route found for path: ${path}`);
+      setCurrentRoute(path);
+      stackRef.current.push(path);
       return;
     }
 
+    // Native: just manage the in-memory stack/state
+    stackRef.current.push(path);
     setCurrentRoute(path);
-    setParams({ ...matchedRoute.params, ...newParams });
-    setHistory(prev => [...prev, path]);
-
-    // Update browser URL on web
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.history.pushState({}, '', path);
-    }
   };
 
   const goBack = () => {
-    if (history.length > 1) {
-      const newHistory = [...history];
-      newHistory.pop(); // Remove current route
-      const previousRoute = newHistory[newHistory.length - 1];
-      
-      setHistory(newHistory);
-      setCurrentRoute(previousRoute);
-      
-      const matchedRoute = matchRoute(previousRoute);
-      setParams(matchedRoute?.params || {});
-
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    if (isWeb()) {
+      // Let the browser handle it; popstate listener will update state.
+      if (window.history.length > 1) {
         window.history.back();
       }
+      return;
+    }
+
+    // Native
+    if (stackRef.current.length > 1) {
+      stackRef.current.pop();
+      const prev = stackRef.current[stackRef.current.length - 1] || '/';
+      paramsRef.current = {};
+      setCurrentRoute(prev);
     }
   };
 
   const canGoBack = () => {
-    return history.length > 1;
+    if (isWeb()) return window.history.length > 1;
+    return stackRef.current.length > 1;
   };
 
-  const contextValue: NavigationContextType = {
+  const value = useMemo<NavAPI>(() => ({
     currentRoute,
-    params,
+    params: paramsRef.current,
     navigate,
     goBack,
-    canGoBack
-  };
+    canGoBack,
+  }), [currentRoute]);
 
-  return (
-    <NavigationContext.Provider value={contextValue}>
-      {children}
-    </NavigationContext.Provider>
-  );
+  return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;
 }
 
 export function useNavigation() {
-  const context = useContext(NavigationContext);
-  if (!context) {
-    throw new Error('useNavigation must be used within NavigationProvider');
-  }
-  return context;
-}
-
-export function useParams<T = Record<string, string>>(): T {
-  const { params } = useNavigation();
-  return params as T;
-}
-
-export function useRoute() {
-  const { currentRoute, params } = useNavigation();
-  const routeConfig = routes.find(route => route.path === currentRoute);
-  
-  return {
-    path: currentRoute,
-    params,
-    config: routeConfig
-  };
+  const ctx = useContext(NavigationContext);
+  if (!ctx) throw new Error('useNavigation must be used within NavigationProvider');
+  return ctx;
 }
