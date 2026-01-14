@@ -795,6 +795,31 @@ def run_command_logic(port=8000):
 # -----------------------------------------------------------------------------
 # Project scaffolding
 # -----------------------------------------------------------------------------
+
+def write_netlify_toml(project_root: str):
+    netlify_path = os.path.join(project_root, "netlify.toml")
+    if os.path.exists(netlify_path):
+        # don’t overwrite if user already has one
+        print("netlify.toml already exists, leaving it untouched.")
+        return
+
+    content = """[build]
+base = "build"
+command = "npm ci && npm run build:web"
+publish = "dist"
+
+[build.environment]
+NODE_VERSION = "20.19.4"
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
+"""
+    with open(netlify_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("✓ netlify.toml created")
+
 def create_app_directory(name, api_only=False):
     """Create a new application directory using templates."""
     directory_path = os.path.join(PROJECT_ROOT, name)
@@ -810,6 +835,9 @@ def create_app_directory(name, api_only=False):
 
         backend_dir = os.path.join(directory_path, 'app')
         os.makedirs(backend_dir, exist_ok=True)
+
+        # Write Netlify toml file - to be refactored later
+        write_netlify_toml(directory_path)
 
         # Make app a proper package
         with open(os.path.join(backend_dir, '__init__.py'), 'w') as f:

@@ -27,9 +27,35 @@ function extOrderFor(platform) {
     case 'web':
       return ['.web.tsx', '.web.ts', '.tsx', '.ts', '.web.jsx', '.jsx', '.web.js', '.js'];
     case 'ios':
-      return ['.ios.tsx', '.ios.ts', '.native.tsx', '.native.ts', '.tsx', '.ts', '.ios.jsx', '.native.jsx', '.jsx', '.ios.js', '.native.js', '.js'];
+      return [
+        '.ios.tsx',
+        '.ios.ts',
+        '.native.tsx',
+        '.native.ts',
+        '.tsx',
+        '.ts',
+        '.ios.jsx',
+        '.native.jsx',
+        '.jsx',
+        '.ios.js',
+        '.native.js',
+        '.js',
+      ];
     case 'android':
-      return ['.android.tsx', '.android.ts', '.native.tsx', '.native.ts', '.tsx', '.ts', '.android.jsx', '.native.jsx', '.jsx', '.android.js', '.native.js', '.js'];
+      return [
+        '.android.tsx',
+        '.android.ts',
+        '.native.tsx',
+        '.native.ts',
+        '.tsx',
+        '.ts',
+        '.android.jsx',
+        '.native.jsx',
+        '.jsx',
+        '.android.js',
+        '.native.js',
+        '.js',
+      ];
     case 'native':
     default:
       return ['.native.tsx', '.native.ts', '.tsx', '.ts', '.native.jsx', '.jsx', '.native.js', '.js'];
@@ -41,27 +67,49 @@ function isPageFile(file) {
   return /\.(tsx|ts|jsx|js)$/.test(file);
 }
 
-// Turn a file path inside app/ into a route path.
-// e.g. "app/about.tsx" -> "/about"
-//      "app/profile/[id].tsx" -> "/profile/:id"
-//      "app/index.tsx" -> "/index" (we will also alias "/" later)
-function toRoutePath(appRelFile) {
-  const noExt = appRelFile.replace(/\.(tsx|ts|jsx|js)$/, '');
-
-  // Normalize segments and convert bracket params to :params
-  const segments = noExt.split(path.sep).map(s => {
-    if (s === 'index' && noExt !== 'index') return 'index'; // keep explicit "index" for aliasing
-    if (/^\[.+\]$/.test(s)) return `:${s.slice(1, -1)}`;
-    return s;
-  });
-
-  if (segments.length === 1 && segments[0] === 'index') {
-    return '/index';
-  }
-  return '/' + segments.join('/').replace(/\/index$/, '/index'); // keep explicit /index
+function stripExt(rel) {
+  return rel.replace(/\.(tsx|ts|jsx|js)$/, '');
 }
 
-// Prefer the correct platform variant for a given logical page (route "stem")
+function toSegmentsNoExt(appRelFileNoExt) {
+  return appRelFileNoExt.split(path.sep).map(seg => {
+    if (/^\[.+\]$/.test(seg)) return `:${seg.slice(1, -1)}`;
+    return seg;
+  });
+}
+
+// Canonical route path:
+// - app/index.tsx            -> "/"
+// - app/blog/index.tsx       -> "/blog"
+// - app/blog/entry-1.tsx     -> "/blog/entry-1"
+// - app/profile/[id].tsx     -> "/profile/:id"
+function toRoutePath(appRelFile) {
+  const noExt = stripExt(appRelFile);
+  const segments = toSegmentsNoExt(noExt);
+
+  // root index => "/"
+  if (segments.length === 1 && segments[0] === 'index') return '/';
+
+  // folder index => "/folder"
+  if (segments[segments.length - 1] === 'index') {
+    return '/' + segments.slice(0, -1).join('/');
+  }
+
+  return '/' + segments.join('/');
+}
+
+// Optional alias route that keeps "index" explicit:
+// - app/index.tsx       -> "/index"
+// - app/blog/index.tsx  -> "/blog/index"
+// - otherwise matches canonical
+function toRoutePathKeepingIndex(appRelFile) {
+  const noExt = stripExt(appRelFile);
+  const segments = toSegmentsNoExt(noExt);
+
+  if (segments.length === 1 && segments[0] === 'index') return '/index';
+  return '/' + segments.join('/');
+}
+
 function resolvePlatformFile(variants, platform) {
   const order = extOrderFor(platform);
   for (const ext of order) {
@@ -91,7 +139,7 @@ function scanApp(appDir) {
   // Group by "stem" (remove extension)
   const byStem = new Map();
   for (const rel of all) {
-    const stem = rel.replace(/\.(tsx|ts|jsx|js)$/, '');
+    const stem = stripExt(rel);
     if (!byStem.has(stem)) byStem.set(stem, []);
     byStem.get(stem).push(rel);
   }
@@ -164,14 +212,15 @@ function generateRoutesConfig() {
       continue;
     }
 
-    const routePath = toRoutePath(chosen); // chosen is app-relative with extension
+    const routePath = toRoutePath(chosen); // canonical (folder index => parent)
     const importPath = buildImportPath(projectRoot, chosen); // path without extension
 
     addRoute(routePath, importPath);
 
-    // If this is "/index", also add "/" using the exact same importPath
-    if (routePath === '/index') {
-      addRoute('/', importPath);
+    // Optional aliases that keep "/.../index" explicit (helps backwards compatibility)
+    const aliasPath = toRoutePathKeepingIndex(chosen);
+    if (aliasPath !== routePath) {
+      addRoute(aliasPath, importPath);
     }
   }
 

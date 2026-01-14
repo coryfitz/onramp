@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "onramp"
 version = "0.1.0"
@@ -12,11 +16,26 @@ dependencies = [
     "watchfiles>=1.1.0",
 ]
 
+[project.scripts]
+onramp = "onramp.cli:main"
+
 [[tool.uv.index]]
 name = "testpypi"
 url = "https://test.pypi.org/simple/"
 publish-url = "https://test.pypi.org/legacy/"
 explicit = true
 
-[project.scripts]
-onramp = "onramp.cli:main"
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# include config.toml, static assets, and template JS/TSX
+[tool.setuptools.package-data]
+"onramp" = [
+  "config.toml",
+  "static/*",
+  "static/**/*",
+  "templates/*"
+]
