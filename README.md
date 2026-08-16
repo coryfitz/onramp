@@ -9,6 +9,18 @@ run on the web, iOS, and Android with a shared React Native frontend.
 pip install onramp
 ```
 
+## Project architecture
+
+Generated full-stack projects have two source areas:
+
+- `app/` is the Python backend, settings, models, and migrations.
+- `build/` is the editable universal React Native frontend in the current
+  OnRamp phase. Despite the directory name, it is not disposable output.
+
+Native projects under `build/ios/` and `build/android/` are added lazily.
+`BACKEND=False` disables launching Python alongside the frontend but preserves
+the backend scaffold for later use.
+
 ## Create an app
 
 Start a new OnRamp app:
@@ -16,6 +28,10 @@ Start a new OnRamp app:
 ```bash
 onramp new <app_name>
 ```
+
+Run this command from the new app's parent directory. The destination may be
+missing or empty; OnRamp refuses non-empty destinations. Generation is staged
+and only published after the backend and frontend both succeed.
 
 The default is web-first: it creates the shared universal frontend without
 creating iOS or Android projects. Native projects are added automatically when
@@ -53,11 +69,40 @@ Run a native app from the project directory:
 ```
 onramp ios
 onramp android
+onramp mobile
 ```
+
+`onramp mobile` prepares and launches both native apps. Each platform gets its
+own project-owned Metro server, and a backend-enabled project starts only one
+Python server for both apps.
+
+Check a toolchain without changing the generated app:
+
+```
+onramp doctor web
+onramp doctor ios
+onramp doctor android
+```
+
+`--port` controls the Python backend. Native commands independently select a
+free Metro port so they never attach to an unidentified bundler on port 8081.
+Use `--metro-port <port>` to request a specific free port. For `onramp mobile`,
+that is the iOS port and Android selects the next available port above it.
+The selected Metro process remains attached to the command; press Ctrl+C to
+stop it and any backend process OnRamp started for that run.
 
 On macOS, `onramp ios` delegates the frontend launch to `onramp-js`. It adds the iOS project if it is missing, checks Xcode and CocoaPods, installs Pods, asks Xcode which simulators are actually compatible with the app, and selects one automatically. If the compatible iOS Simulator runtime is missing, OnRamp offers to download it before continuing. Xcode itself must still be installed separately; `onramp-js` uses Apple's installed toolchain.
 
 `onramp android` delegates the frontend launch to `onramp-js`. It adds the Android project if it is missing, locates an installed Android SDK and virtual device, adds `adb` and the emulator to the command environment, selects JDK 17 for Gradle, and wakes emulators restored from an asleep Quick Boot snapshot automatically. These settings apply only to the frontend process, so no shell-profile editing is required.
+
+Repair iOS dependencies while preserving the resolved versions:
+
+```
+onramp repair:ios
+```
+
+Use `onramp repair:ios --fresh` only when you deliberately want to remove
+`Podfile.lock` and resolve native dependency versions again.
 
 
 The OnRamp App Framework Philosophy
@@ -96,13 +141,22 @@ The developer experience of new OnRamp programmers takes precedence over power u
 
 Specific Design Considerations
 
-The long term goal is for the onramp-js React Native frontend to be written in Python and then transpiled into React Native code. This is why that code goes in a 'build' directory - eventually that code will be built by a transpiler and shouldn't be edited by hand. In this initial phase, however, we will edit the build directory and treat it as the frontend directory. The frontend code will be defined in Python in the app/components directory.
+The long-term goal is for the `onramp-js` React Native frontend to be written
+in Python and transpiled into React Native code. This is why the frontend lives
+in a `build` directory. In the current phase, however, `build/` is frontend
+source and must be edited and committed directly. `app/` remains Python
+backend source; there is not yet a Python-to-frontend compiler or an
+`app/components` frontend source tree.
 
 Frontend Generator
 
 The React Native frontend generator lives in the `onramp-js` directory and is published as the `onramp-js` npm package. The Python `onramp new` command invokes the compatible pinned version of that package to create the completed React Native app in the project's `build` directory.
 
-When developing OnRamp from this repository, the Python CLI automatically uses the local `onramp-js` source. An installed OnRamp Python package uses the `onramp-js` version specified in `src/onramp/config.toml`.
+When developing OnRamp from this repository, the Python CLI automatically uses
+the local `onramp-js` source. `onramp-js/` is a separate Git repository and is
+ignored by the parent Python repository, so inspect and commit both worktrees
+separately. An installed OnRamp Python package uses the `onramp-js` version
+specified in `src/onramp/config.toml`.
 
 The generator can also be invoked directly. This creates a web-ready app in
 `myapp/`:
@@ -128,4 +182,27 @@ npx onramp-js doctor android
 npx onramp-js run web
 npx onramp-js run ios
 npx onramp-js run android
+```
+
+When invoked by the Python CLI, the generator prints the corresponding
+`onramp` commands instead of suggesting or describing internal npm/npx
+commands.
+
+## Contributing
+
+The repository-level `AGENTS.md` documents the two-repository workflow and the
+generated-project invariants for humans and coding agents.
+
+Run the Python tests with:
+
+```
+uv sync --extra dev
+uv run --extra dev pytest
+```
+
+Run the frontend-generator tests separately:
+
+```
+cd onramp-js
+npm test
 ```

@@ -1,0 +1,36 @@
+# Operating-system files
+.DS_Store
+Thumbs.db
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases
+app/db/*.sqlite3
+app/db/*.sqlite3-*
+
+# Frontend dependencies and output (build/ itself is source code in OnRamp)
+build/node_modules/
+build/dist/
+build/coverage/
+build/.DS_Store
+build/src/.DS_Store
+
+# Native generated dependencies and build output
+build/ios/Pods/
+build/ios/build/
+build/ios/.xcode.env.local
+build/android/.gradle/
+build/android/app/build/
+build/android/build/
+
+# Tooling
+.idea/
+.vscode/
+*.log

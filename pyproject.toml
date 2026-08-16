@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "onramp"
-version = "0.2.0"
+version = "0.3.0"
 description = "A full-stack Python framework for building web, iOS, and Android apps with React Native"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -35,6 +35,12 @@ dependencies = [
     "watchfiles>=1.1.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-cov>=6.0.0",
+]
+
 [project.scripts]
 onramp = "onramp.cli:main"
 
@@ -51,15 +57,22 @@ explicit = true
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
 
 # include config.toml, static assets, and Python app templates
 [tool.setuptools.package-data]
 "onramp" = [
   "config.toml",
-  "static/*",
-  "static/**/*",
+  "static/logo.png",
   "templates/*"
 ]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.py[cod]", "__pycache__/*"]

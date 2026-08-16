@@ -144,7 +144,15 @@ _db_manager = None
 def get_db_manager(app_dir: str = None):
     """Get or create database manager instance"""
     global _db_manager
-    if _db_manager is None:
+    requested_app_dir = os.path.abspath(app_dir) if app_dir else None
+    current_app_dir = (
+        os.path.abspath(_db_manager.app_dir)
+        if _db_manager is not None and _db_manager.app_dir
+        else None
+    )
+    if _db_manager is None or (
+        requested_app_dir is not None and requested_app_dir != current_app_dir
+    ):
         _db_manager = DatabaseManager(app_dir)
     return _db_manager
 

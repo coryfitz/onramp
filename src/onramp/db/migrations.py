@@ -24,16 +24,6 @@ class MigrationManager:
         # Ensure the db directory exists
         os.makedirs(self.db_dir, exist_ok=True)
         
-        # Check if aerich config exists in pyproject.toml
-        if os.path.exists(aerich_config_path):
-            with open(aerich_config_path, 'r') as f:
-                content = f.read()
-                if '[tool.aerich]' in content:
-                    return  # Already configured
-        
-        # Create or update pyproject.toml with aerich config
-        tortoise_config = self.db_manager.get_tortoise_config()
-        
         aerich_section = f"""
 [tool.aerich]
 tortoise_orm = "app.db.db_config.TORTOISE_ORM"
@@ -44,8 +34,14 @@ src_folder = "./."
         # Create db_config.py in app/db/ directory for aerich to import
         db_config_path = os.path.join(self.db_dir, 'db_config.py')
         with open(db_config_path, 'w') as f:
-            f.write(f"""# Auto-generated database config for aerich
-TORTOISE_ORM = {repr(tortoise_config)}
+            f.write("""# Auto-generated database config for Aerich.
+# Resolve the app directory at import time so cloned or moved projects remain portable.
+from pathlib import Path
+
+from onramp.db.manager import DatabaseManager
+
+APP_DIR = Path(__file__).resolve().parents[1]
+TORTOISE_ORM = DatabaseManager(str(APP_DIR)).get_tortoise_config()
 """)
         
         # Create __init__.py in db directory to make it a package
@@ -54,6 +50,10 @@ TORTOISE_ORM = {repr(tortoise_config)}
             f.write("# Database package\n")
         
         if os.path.exists(aerich_config_path):
+            with open(aerich_config_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            if '[tool.aerich]' in content:
+                return
             with open(aerich_config_path, 'a') as f:
                 f.write(aerich_section)
         else:
@@ -162,7 +162,15 @@ _migration_manager = None
 def get_migration_manager(app_dir: str = None):
     """Get or create migration manager instance"""
     global _migration_manager
-    if _migration_manager is None:
+    requested_app_dir = os.path.abspath(app_dir) if app_dir else None
+    current_app_dir = (
+        os.path.abspath(_migration_manager.app_dir)
+        if _migration_manager is not None and _migration_manager.app_dir
+        else None
+    )
+    if _migration_manager is None or (
+        requested_app_dir is not None and requested_app_dir != current_app_dir
+    ):
         _migration_manager = MigrationManager(app_dir)
     return _migration_manager
 

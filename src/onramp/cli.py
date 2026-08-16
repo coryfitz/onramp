@@ -13,9 +13,16 @@ import importlib.resources
 import platform
 import signal
 import atexit
+import tempfile
 from watchfiles import watch
 from .db.migrations import create_migration, migrate, init_migrations
-from .frontend import create_frontend, repair_frontend, run_frontend, start_frontend
+from .frontend import (
+    create_frontend,
+    doctor_frontend,
+    repair_frontend,
+    run_frontend,
+    start_frontend,
+)
 from types import SimpleNamespace
 import re
 
@@ -177,7 +184,7 @@ def find_next_available_port(starting_port=8000):
 def run_web(with_backend=True, port=8000):
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
-        return
+        return False
 
     env = ensure_node_env()
     if with_backend:
@@ -186,22 +193,23 @@ def run_web(with_backend=True, port=8000):
             print("Starting web frontend and backend...")
             web_process = start_frontend("web", BUILD_DIR, env=env)
             if not web_process:
-                return
+                return False
             spawned_processes.append(web_process)
             run_uvicorn_with_watch(port)
+            return True
         else:
             print("Backend disabled. Running web only...")
-            run_frontend("web", BUILD_DIR, env=env)
+            return run_frontend("web", BUILD_DIR, env=env)
     else:
         print("Running web development server...")
-        run_frontend("web", BUILD_DIR, env=env)
+        return run_frontend("web", BUILD_DIR, env=env)
 
 
-def run_ios(port: int = 8000):
+def run_ios(port: int = 8000, metro_port: int | None = None):
     """Run iOS simulator; if BACKEND=True also start the backend dev server."""
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
-        return
+        return False
 
     env = ensure_node_env()
     project_name = os.path.basename(PROJECT_ROOT)
@@ -213,25 +221,85 @@ def run_ios(port: int = 8000):
             BUILD_DIR,
             app_name=project_name,
             env=env,
+            metro_port=metro_port,
         )
         if not ios_process:
-            return
+            return False
         spawned_processes.append(ios_process)
         run_uvicorn_with_watch(port)
+        return True
     else:
-        run_frontend("ios", BUILD_DIR, app_name=project_name, env=env)
+        return run_frontend(
+            "ios",
+            BUILD_DIR,
+            app_name=project_name,
+            env=env,
+            metro_port=metro_port,
+        )
 
 
-def run_android():
+def run_android(port: int = 8000, metro_port: int | None = None):
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
-        return
+        return False
 
-    run_frontend(
+    env = ensure_node_env()
+    project_name = os.path.basename(PROJECT_ROOT)
+    backend_enabled = getattr(settings, "BACKEND", True)
+    if backend_enabled:
+        print("Starting Android (in background) + backend dev server...")
+        android_process = start_frontend(
+            "android",
+            BUILD_DIR,
+            app_name=project_name,
+            env=env,
+            metro_port=metro_port,
+        )
+        if not android_process:
+            return False
+        spawned_processes.append(android_process)
+        run_uvicorn_with_watch(port)
+        return True
+
+    return run_frontend(
         "android",
         BUILD_DIR,
-        app_name=os.path.basename(PROJECT_ROOT),
-        env=ensure_node_env(),
+        app_name=project_name,
+        env=env,
+        metro_port=metro_port,
+    )
+
+
+def run_mobile(port: int = 8000, metro_port: int | None = None):
+    """Run the iOS and Android apps with one shared backend process."""
+    if not os.path.exists(BUILD_DIR):
+        print("Build directory not found. Run 'onramp new <name>' first.")
+        return False
+
+    env = ensure_node_env()
+    project_name = os.path.basename(PROJECT_ROOT)
+    backend_enabled = getattr(settings, "BACKEND", True)
+    if backend_enabled:
+        print("Starting iOS + Android (in background) + backend dev server...")
+        mobile_process = start_frontend(
+            "mobile",
+            BUILD_DIR,
+            app_name=project_name,
+            env=env,
+            metro_port=metro_port,
+        )
+        if not mobile_process:
+            return False
+        spawned_processes.append(mobile_process)
+        run_uvicorn_with_watch(port)
+        return True
+
+    return run_frontend(
+        "mobile",
+        BUILD_DIR,
+        app_name=project_name,
+        env=env,
+        metro_port=metro_port,
     )
 
 
@@ -328,14 +396,15 @@ def run_command_logic(port=8000):
     if not os.path.exists(BUILD_DIR):
         print("No build directory found. Running backend only")
         run_uvicorn_with_watch(port)
-        return
+        return True
 
     try:
         backend_enabled = getattr(settings, 'BACKEND', True)
-        run_web(with_backend=backend_enabled, port=port)
+        return run_web(with_backend=backend_enabled, port=port)
     except Exception as e:
         print(f"Error checking settings: {e}. Running backend only")
         run_uvicorn_with_watch(port)
+        return True
 
 # -----------------------------------------------------------------------------
 # Project scaffolding
@@ -365,24 +434,77 @@ status = 200
         f.write(content)
     print("✓ netlify.toml created")
 
-def create_app_directory(name, api_only=False):
+
+def _project_distribution_name(name: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", name.strip()).strip("-._")
+    return normalized.lower() or "onramp-app"
+
+
+def _write_project_template(
+    template_name: str,
+    destination: str,
+    replacements: dict[str, str] | None = None,
+):
+    templates_module = importlib.import_module(f"{MODULE_NAME}.templates")
+    content = (
+        importlib.resources.files(templates_module) / template_name
+    ).read_text(encoding="utf-8")
+    for source, replacement in (replacements or {}).items():
+        content = content.replace(source, replacement)
+    with open(destination, "w", encoding="utf-8") as project_file:
+        project_file.write(content)
+
+
+def write_project_files(project_root: str, name: str, api_only: bool = False):
+    replacements = {
+        "__ONRAMP_APP_NAME__": name,
+        "__ONRAMP_PROJECT_NAME__": _project_distribution_name(name),
+        "__ONRAMP_PROJECT_KIND__": "API-only" if api_only else "full-stack",
+    }
+    _write_project_template(
+        "project_README.md",
+        os.path.join(project_root, "README.md"),
+        replacements,
+    )
+    _write_project_template(
+        "project_gitignore",
+        os.path.join(project_root, ".gitignore"),
+    )
+    _write_project_template(
+        "AGENTS.md",
+        os.path.join(project_root, "AGENTS.md"),
+        replacements,
+    )
+    _write_project_template(
+        "pyproject.toml",
+        os.path.join(project_root, "pyproject.toml"),
+        replacements,
+    )
+
+
+def create_app_directory(name, api_only=False, directory_path=None):
     """Create a new application directory using templates."""
-    directory_path = os.path.join(PROJECT_ROOT, name)
+    directory_path = directory_path or os.path.join(PROJECT_ROOT, name)
     if os.path.exists(directory_path):
-        print('app name already exists at this directory')
-        return
+        if not os.path.isdir(directory_path):
+            print(f"Cannot create app: target is not a directory: {directory_path}")
+            return False
+        if os.listdir(directory_path):
+            print(f"Cannot create app: target directory is not empty: {directory_path}")
+            return False
 
     try:
         print(f"Creating {FRAMEWORK_NAME} {'API' if api_only else 'backend'}...")
 
         os.makedirs(directory_path, exist_ok=True)
         TEMPLATES_MODULE = importlib.import_module(f"{MODULE_NAME}.templates")
+        write_project_files(directory_path, name, api_only=api_only)
 
         backend_dir = os.path.join(directory_path, 'app')
         os.makedirs(backend_dir, exist_ok=True)
 
-        # Write Netlify toml file - to be refactored later
-        write_netlify_toml(directory_path)
+        if not api_only:
+            write_netlify_toml(directory_path)
 
         # Make app a proper package
         with open(os.path.join(backend_dir, '__init__.py'), 'w') as f:
@@ -414,6 +536,8 @@ def create_app_directory(name, api_only=False):
 
         api_dir = os.path.join(backend_dir, 'api')
         os.makedirs(api_dir, exist_ok=True)
+        with open(os.path.join(api_dir, '__init__.py'), 'w') as f:
+            f.write("# API package\n")
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'index.py',
                         os.path.join(api_dir, 'index.py'))
 
@@ -428,21 +552,87 @@ def create_app_directory(name, api_only=False):
             if success:
                 print("Database migration system ready")
             else:
-                print("Note: Run 'onramp migrate' to complete database setup")
-        except Exception:
-            print("Note: Run 'onramp migrate' to set up database migrations")
+                raise RuntimeError("Database migration setup did not complete")
+        except Exception as error:
+            print(f"Database migration setup failed: {error}")
+            return False
         finally:
             os.chdir(original_cwd)
 
+        return True
+
     except Exception as e:
         print(f"An error occurred while creating the directory: {e}")
+        return False
 
-def repair_ios(build_dir=BUILD_DIR):
-    repair_frontend(
+
+def create_new_project(
+    name: str,
+    api_only: bool = False,
+    platform: str = "web",
+) -> bool:
+    """Create a complete project in staging and publish it atomically."""
+    if (
+        not name
+        or name in {".", ".."}
+        or os.sep in name
+        or (os.altsep and os.altsep in name)
+    ):
+        print("App name must be a single directory name.")
+        return False
+
+    target = os.path.join(PROJECT_ROOT, name)
+    if os.path.exists(target):
+        if not os.path.isdir(target):
+            print(f"Cannot create app: target is not a directory: {target}")
+            return False
+        if os.listdir(target):
+            print(f"Cannot create app: target directory is not empty: {target}")
+            return False
+
+    staging = tempfile.mkdtemp(
+        prefix=f".{_project_distribution_name(name)}-onramp-",
+        dir=PROJECT_ROOT,
+    )
+    try:
+        if not create_app_directory(
+            name,
+            api_only=api_only,
+            directory_path=staging,
+        ):
+            raise RuntimeError("Backend scaffolding failed")
+
+        if not api_only:
+            frontend_dir = os.path.join(staging, "build")
+            frontend_env = ensure_node_env()
+            frontend_env["ONRAMP_PROJECT_ROOT"] = target
+            if not create_frontend(
+                name,
+                frontend_dir,
+                env=frontend_env,
+                platform=platform,
+            ):
+                raise RuntimeError("Frontend scaffolding failed")
+
+        if os.path.isdir(target):
+            os.rmdir(target)
+        os.replace(staging, target)
+        print(f"✓ {FRAMEWORK_NAME} project created at {target}")
+        return True
+    except Exception as error:
+        print(f"Project creation failed: {error}")
+        return False
+    finally:
+        if os.path.exists(staging):
+            shutil.rmtree(staging, ignore_errors=True)
+
+def repair_ios(build_dir=BUILD_DIR, fresh=False):
+    return repair_frontend(
         "ios",
         build_dir,
         app_name=os.path.basename(PROJECT_ROOT),
         env=ensure_node_env(),
+        fresh=fresh,
     )
 
 # Unclear why these folders are being created - I should find a more elegant fix later
@@ -526,10 +716,40 @@ def main():
 
     original_cwd = os.getcwd()
     try:
-        parser = argparse.ArgumentParser(description=f"{FRAMEWORK_NAME} App Generator and Runner")
+        parser = argparse.ArgumentParser(
+            description=f"{FRAMEWORK_NAME} App Generator and Runner",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog=f"""Commands:
+  {FRAMEWORK_NAME.lower()} new <name> [--api | --mobile | --all]
+  {FRAMEWORK_NAME.lower()} run [--port 8000]
+  {FRAMEWORK_NAME.lower()} web
+  {FRAMEWORK_NAME.lower()} ios [--port 8000] [--metro-port 8081]
+  {FRAMEWORK_NAME.lower()} android [--port 8000] [--metro-port 8081]
+  {FRAMEWORK_NAME.lower()} mobile [--port 8000] [--metro-port 8081]
+  {FRAMEWORK_NAME.lower()} doctor [web|ios|android|mobile|all]
+  {FRAMEWORK_NAME.lower()} repair:ios [--fresh]
+  {FRAMEWORK_NAME.lower()} prepmigrations [name]
+  {FRAMEWORK_NAME.lower()} migrate [name]
+  {FRAMEWORK_NAME.lower()} del <directory>
+
+The --port option controls the Python backend. --metro-port controls the
+React Native bundler. repair:ios preserves Podfile.lock unless --fresh is set.
+""",
+        )
         parser.add_argument("command", help="The command to run")
         parser.add_argument("name", nargs='?', help="The name of the app directory/migration to be created")
         parser.add_argument("--port", type=int, default=8000, help="Port for the development server")
+        parser.add_argument(
+            "--metro-port",
+            type=int,
+            default=None,
+            help="Preferred Metro port for iOS, Android, or mobile",
+        )
+        parser.add_argument(
+            "--fresh",
+            action="store_true",
+            help="Allow repair:ios to recreate Podfile.lock",
+        )
         project_type = parser.add_mutually_exclusive_group()
         project_type.add_argument(
             "--api",
@@ -556,42 +776,51 @@ def main():
 
         if args.command == "new":
             if args.name:
-                create_app_directory(args.name, api_only=args.api)
-                if not args.api:
-                    try:
-                        os.chdir(original_cwd)
-                    except Exception:
-                        pass
-                    frontend_env = ensure_node_env()
-                    frontend_dir = os.path.join(PROJECT_ROOT, args.name, "build")
-                    platform_selection = (
-                        "all" if args.all_platforms
-                        else "mobile" if args.mobile
-                        else "web"
-                    )
-                    create_frontend(
-                        args.name,
-                        frontend_dir,
-                        env=frontend_env,
-                        platform=platform_selection,
-                    )
+                platform_selection = (
+                    "all" if args.all_platforms
+                    else "mobile" if args.mobile
+                    else "web"
+                )
+                return 0 if create_new_project(
+                    args.name,
+                    api_only=args.api,
+                    platform=platform_selection,
+                ) else 1
             else:
                 print(f"Please provide a name for the new app. Usage: '{FRAMEWORK_NAME.lower()} new <name>'")
+                return 2
 
         elif args.command == "run":
             if args.web_only:
-                run_web(with_backend=False, port=args.port)
+                return 0 if run_web(with_backend=False, port=args.port) else 1
             else:
-                run_command_logic(port=args.port)
+                return 0 if run_command_logic(port=args.port) else 1
 
         elif args.command == "ios":
-            run_ios(args.port)
+            return 0 if run_ios(args.port, metro_port=args.metro_port) else 1
 
         elif args.command == "android":
-            run_android()
+            return 0 if run_android(
+                args.port,
+                metro_port=args.metro_port,
+            ) else 1
+
+        elif args.command == "mobile":
+            return 0 if run_mobile(
+                args.port,
+                metro_port=args.metro_port,
+            ) else 1
 
         elif args.command == "web":
-            run_web(with_backend=False)
+            return 0 if run_web(with_backend=False) else 1
+
+        elif args.command == "doctor":
+            platform_name = args.name or "all"
+            return 0 if doctor_frontend(
+                platform_name,
+                cwd=BUILD_DIR if os.path.isdir(BUILD_DIR) else PROJECT_ROOT,
+                env=ensure_node_env(),
+            ) else 1
 
         elif args.command == "prepmigrations":
             return handle_prepmigrations(args)
@@ -600,26 +829,20 @@ def main():
             return handle_migrate(args)
         
         elif args.command == "repair:ios":
-            repair_ios()
+            return 0 if repair_ios(fresh=args.fresh) else 1
 
         elif args.command == "del":
             return handle_del(args)
 
         else:
-            print(f"Invalid command. Available commands:")
-            print(f"  {FRAMEWORK_NAME.lower()} new <name>     - Create new app")
-            print(f"  {FRAMEWORK_NAME.lower()} new <name> --all - Include all frontend platforms")
-            print(f"  {FRAMEWORK_NAME.lower()} run            - Run web development (default)")
-            print(f"  {FRAMEWORK_NAME.lower()} web            - Run web only (no backend)")
-            print(f"  {FRAMEWORK_NAME.lower()} ios            - Run iOS simulator")
-            print(f"  {FRAMEWORK_NAME.lower()} android        - Run Android emulator")
-            print(f"  {FRAMEWORK_NAME.lower()} prepmigrations - Prepare database migrations")
-            print(f"  {FRAMEWORK_NAME.lower()} migrate        - Apply database migrations")
+            parser.print_help()
+            print(f"\nInvalid command: {args.command}")
+            return 2
 
     except KeyboardInterrupt:
         print("\nInterrupted by user")
         cleanup_processes()
-        os._exit(0)
+        return 130
     finally:
         try:
             os.chdir(original_cwd)
@@ -630,4 +853,4 @@ def main():
                 os.chdir(os.path.expanduser("~"))
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

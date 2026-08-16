@@ -31,6 +31,13 @@ def _frontend_command(arguments: list[str]) -> list[str]:
     return ["npx", "--yes", package, *arguments]
 
 
+def _frontend_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Return the child environment used by the Python-to-JS bridge."""
+    child_env = dict(env) if env is not None else os.environ.copy()
+    child_env["ONRAMP_PYTHON_WRAPPER"] = "1"
+    return child_env
+
+
 def _run_frontend_command(
     arguments: list[str],
     cwd: Path,
@@ -41,7 +48,7 @@ def _run_frontend_command(
         subprocess.run(
             _frontend_command(arguments),
             cwd=cwd,
-            env=dict(env) if env is not None else os.environ.copy(),
+            env=_frontend_env(env),
             check=True,
         )
         return True
@@ -88,15 +95,18 @@ def run_frontend(
     output_dir: str | Path,
     app_name: str | None = None,
     env: Mapping[str, str] | None = None,
+    metro_port: int | None = None,
 ) -> bool:
     """Prepare and run a frontend platform with onramp-js."""
-    if platform not in {"web", "ios", "android"}:
+    if platform not in {"web", "ios", "android", "mobile"}:
         raise ValueError(f"Unsupported frontend run platform: {platform}")
 
     output_path = Path(output_dir).resolve()
     arguments = ["run", platform, "--output", str(output_path)]
     if app_name:
         arguments.extend(["--name", app_name])
+    if metro_port is not None:
+        arguments.extend(["--metro-port", str(metro_port)])
 
     return _run_frontend_command(
         arguments,
@@ -111,21 +121,24 @@ def start_frontend(
     output_dir: str | Path,
     app_name: str | None = None,
     env: Mapping[str, str] | None = None,
+    metro_port: int | None = None,
 ) -> subprocess.Popen | None:
     """Start an onramp-js platform command without blocking Python."""
-    if platform not in {"web", "ios", "android"}:
+    if platform not in {"web", "ios", "android", "mobile"}:
         raise ValueError(f"Unsupported frontend run platform: {platform}")
 
     output_path = Path(output_dir).resolve()
     arguments = ["run", platform, "--output", str(output_path)]
     if app_name:
         arguments.extend(["--name", app_name])
+    if metro_port is not None:
+        arguments.extend(["--metro-port", str(metro_port)])
 
     try:
         return subprocess.Popen(
             _frontend_command(arguments),
             cwd=output_path,
-            env=dict(env) if env is not None else os.environ.copy(),
+            env=_frontend_env(env),
         )
     except OSError as error:
         print(f"Could not start the {platform} frontend: {error}")
@@ -137,6 +150,7 @@ def repair_frontend(
     output_dir: str | Path,
     app_name: str | None = None,
     env: Mapping[str, str] | None = None,
+    fresh: bool = False,
 ) -> bool:
     """Repair frontend platform dependencies with onramp-js."""
     if platform != "ios":
@@ -146,10 +160,33 @@ def repair_frontend(
     arguments = ["repair", platform, "--output", str(output_path)]
     if app_name:
         arguments.extend(["--name", app_name])
+    if fresh:
+        arguments.append("--fresh")
 
     return _run_frontend_command(
         arguments,
         output_path,
         env,
         f"{platform} repair",
+    )
+
+
+def doctor_frontend(
+    platform: str = "all",
+    cwd: str | Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> bool:
+    """Check frontend development tools through onramp-js."""
+    if platform not in {"web", "ios", "android", "mobile", "all"}:
+        raise ValueError(
+            "Unsupported frontend doctor platform: "
+            f"{platform}. Use web, ios, android, mobile, or all."
+        )
+
+    working_directory = Path(cwd or os.getcwd()).resolve()
+    return _run_frontend_command(
+        ["doctor", platform],
+        working_directory,
+        env,
+        f"{platform} environment check",
     )
