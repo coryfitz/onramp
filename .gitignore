@@ -9,4 +9,14 @@ wheels/
 # Virtual environments
 .venv
 
+# Node-generated files
+node_modules/
+*.tgz
+
+# Standalone JavaScript package repository
+/onramp-js/
+
+# macOS-generated files
+.DS_Store
+
 .cursorrules

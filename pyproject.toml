@@ -1,13 +1,32 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "onramp"
-version = "0.1.0"
-description = ""
+version = "0.2.0"
+description = "A full-stack Python framework for building web, iOS, and Android apps with React Native"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Cory Fitz" },
+]
+keywords = [
+    "app-framework",
+    "full-stack",
+    "react-native",
+    "web",
+    "wora",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
 dependencies = [
     "aerich>=0.9.1",
     "starlette>=0.47.3",
@@ -18,6 +37,11 @@ dependencies = [
 
 [project.scripts]
 onramp = "onramp.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/coryfitz/onramp"
+Repository = "https://github.com/coryfitz/onramp"
+Issues = "https://github.com/coryfitz/onramp/issues"
 
 [[tool.uv.index]]
 name = "testpypi"
@@ -31,7 +55,7 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
-# include config.toml, static assets, and template JS/TSX
+# include config.toml, static assets, and Python app templates
 [tool.setuptools.package-data]
 "onramp" = [
   "config.toml",
