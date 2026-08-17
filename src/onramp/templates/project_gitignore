@@ -31,6 +31,8 @@ build/android/app/build/
 build/android/build/
 
 # Tooling
+.onramp/backups/
+build/.onramp/backups/
 .idea/
 .vscode/
 *.log

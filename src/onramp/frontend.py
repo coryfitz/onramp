@@ -190,3 +190,24 @@ def doctor_frontend(
         env,
         f"{platform} environment check",
     )
+
+
+def upgrade_frontend(
+    output_dir: str | Path,
+    env: Mapping[str, str] | None = None,
+    check: bool = False,
+    quiet: bool = False,
+) -> bool:
+    """Plan or apply the onramp-js managed frontend upgrade."""
+    output_path = Path(output_dir).resolve()
+    arguments = ["upgrade", "--output", str(output_path)]
+    if check:
+        arguments.append("--check")
+    if quiet:
+        arguments.append("--quiet")
+    return _run_frontend_command(
+        arguments,
+        output_path,
+        env,
+        "upgrade",
+    )

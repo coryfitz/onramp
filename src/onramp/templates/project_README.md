@@ -39,6 +39,22 @@ explicit Metro port is used for iOS and Android starts above it.
 The native command remains active while Metro is running; press Ctrl+C to stop
 the development process cleanly.
 
+## Framework upgrades
+
+Check or preview an upgrade before applying it:
+
+```bash
+onramp upgrade --check
+onramp upgrade
+```
+
+The check is non-mutating and ends by reporting whether the proposed upgrade
+should be successful.
+
+Project version metadata is stored in `.onramp/project.toml`. OnRamp backs up
+files it changes under `.onramp/backups/` and stops rather than overwriting a
+modified framework-managed file.
+
 ## Native dependencies
 
 When adding a React Native package with native code, install it inside `build/`

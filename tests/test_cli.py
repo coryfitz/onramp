@@ -32,7 +32,7 @@ def test_project_files_have_real_metadata_and_ignore_native_outputs(tmp_path):
     agents = (tmp_path / "AGENTS.md").read_text()
 
     assert 'name = "my-great-app"' in pyproject
-    assert '"onramp>=0.3.0"' in pyproject
+    assert '"onramp~=0.4.0"' in pyproject
     assert "build/ios/Pods/" in gitignore
     assert "build/" not in {
         line.strip() for line in gitignore.splitlines()
@@ -103,6 +103,7 @@ def test_create_new_project_publishes_only_after_both_layers_succeed(
     assert cli.create_new_project("example")
     assert (tmp_path / "example" / "backend-ready").is_file()
     assert (tmp_path / "example" / "build" / "frontend-ready").is_file()
+    assert (tmp_path / "example" / ".onramp" / "project.toml").is_file()
     assert not list(tmp_path.glob(".example-onramp-*"))
 
 

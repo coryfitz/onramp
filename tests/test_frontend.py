@@ -21,7 +21,7 @@ def test_installed_python_package_uses_current_published_frontend(monkeypatch):
     assert frontend._frontend_command(["--version"]) == [
         "npx",
         "--yes",
-        "onramp-js@0.3.3",
+        "onramp-js@0.4.1",
         "--version",
     ]
 
@@ -81,3 +81,16 @@ def test_frontend_failure_is_reported_to_caller(tmp_path, monkeypatch):
     monkeypatch.setattr(frontend, "_frontend_command", lambda args: ["node", *args])
 
     assert not frontend.create_frontend("Example", tmp_path / "build")
+
+
+def test_frontend_upgrade_forwards_non_mutating_mode(tmp_path, monkeypatch):
+    commands = []
+
+    def fake_run(command, cwd, env, action):
+        commands.append(command)
+        return True
+
+    monkeypatch.setattr(frontend, "_run_frontend_command", fake_run)
+
+    assert frontend.upgrade_frontend(tmp_path, check=True)
+    assert commands[-1][-1] == "--check"

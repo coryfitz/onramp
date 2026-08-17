@@ -9,7 +9,7 @@ description = "An OnRamp __ONRAMP_PROJECT_KIND__ application"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "onramp>=0.3.0",
+    "onramp~=0.4.0",
 ]
 
 [tool.setuptools.packages.find]

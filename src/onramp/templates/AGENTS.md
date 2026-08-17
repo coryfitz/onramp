@@ -26,6 +26,9 @@ tools working on __ONRAMP_APP_NAME__.
 - `onramp doctor <platform>` performs a read-only toolchain check.
 - `onramp repair:ios` removes Pods but preserves `Podfile.lock`.
 - `onramp repair:ios --fresh` also removes the lockfile and may change versions.
+- `onramp upgrade --check` inspects migrations without mutation and reports
+  whether the upgrade should be successful.
+- `onramp upgrade` backs up managed files and stops on user-modified conflicts.
 
 ## Native behavior
 
@@ -45,3 +48,9 @@ tools working on __ONRAMP_APP_NAME__.
   checks, run `npm run build:routes` in `build/`.
 - Before handoff, run relevant Python tests, frontend tests/type checks, and at
   least one real platform build when native files or dependencies changed.
+
+## Upgrade metadata
+
+- `.onramp/project.toml` records the project schema and framework versions.
+- `build/.onramp/project.json` records the frontend schema and managed tooling.
+- Files below `.onramp/backups/` are recoverable upgrade snapshots, not source.

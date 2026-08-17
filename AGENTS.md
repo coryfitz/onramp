@@ -47,6 +47,11 @@ npm test
 For end-to-end scaffold work, create a disposable app outside both source
 trees, verify its root metadata, then run its relevant platform command.
 
+For upgrade changes, verify both a new manifest-bearing project and a legacy
+project without `.onramp/project.toml`. Upgrade checks must not mutate either
+tree, and a modified managed file must stop the upgrade before other files
+change.
+
 ## Native launcher invariants
 
 - Never attach an app to an unidentified Metro server merely because port 8081

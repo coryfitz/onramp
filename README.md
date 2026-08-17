@@ -104,6 +104,38 @@ onramp repair:ios
 Use `onramp repair:ios --fresh` only when you deliberately want to remove
 `Podfile.lock` and resolve native dependency versions again.
 
+## Upgrade an existing project
+
+OnRamp records the project schema, Python version, frontend version, React
+Native version, and framework-managed file bases in `.onramp/project.toml`.
+Inspect an upgrade before changing anything:
+
+```bash
+onramp upgrade --check
+```
+
+The check prints the complete non-mutating upgrade plan and ends with a clear
+verdict explaining whether the upgrade should be successful.
+
+Apply the latest release, or select one explicitly:
+
+```bash
+onramp upgrade
+onramp upgrade --to 0.4.0
+```
+
+The upgrader downloads a newer OnRamp release into a temporary environment
+when necessary, runs each project-schema migration in order, updates Python
+and npm metadata structurally, and saves changed files under
+`.onramp/backups/`. Unchanged framework files update automatically. A managed
+file edited by the application developer is never overwritten; the upgrade
+stops and reports the conflict instead. Native projects remain lazy and are
+not rebuilt merely to upgrade project metadata.
+
+Generated projects depend on a compatible release line such as
+`onramp~=0.4.0`. Patch releases remain compatible with that project schema;
+minor releases may introduce a schema migration handled by `onramp upgrade`.
+
 
 The OnRamp App Framework Philosophy
 

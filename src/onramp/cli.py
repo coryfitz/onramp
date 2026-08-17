@@ -23,6 +23,8 @@ from .frontend import (
     run_frontend,
     start_frontend,
 )
+from .project import write_project_manifest
+from .upgrade import upgrade_to_version
 from types import SimpleNamespace
 import re
 
@@ -614,6 +616,8 @@ def create_new_project(
             ):
                 raise RuntimeError("Frontend scaffolding failed")
 
+        write_project_manifest(staging, project_name=name)
+
         if os.path.isdir(target):
             os.rmdir(target)
         os.replace(staging, target)
@@ -728,12 +732,14 @@ def main():
   {FRAMEWORK_NAME.lower()} mobile [--port 8000] [--metro-port 8081]
   {FRAMEWORK_NAME.lower()} doctor [web|ios|android|mobile|all]
   {FRAMEWORK_NAME.lower()} repair:ios [--fresh]
+  {FRAMEWORK_NAME.lower()} upgrade [--check] [--to VERSION]
   {FRAMEWORK_NAME.lower()} prepmigrations [name]
   {FRAMEWORK_NAME.lower()} migrate [name]
   {FRAMEWORK_NAME.lower()} del <directory>
 
 The --port option controls the Python backend. --metro-port controls the
 React Native bundler. repair:ios preserves Podfile.lock unless --fresh is set.
+upgrade creates recoverable backups and never overwrites modified managed files.
 """,
         )
         parser.add_argument("command", help="The command to run")
@@ -749,6 +755,21 @@ React Native bundler. repair:ios preserves Podfile.lock unless --fresh is set.
             "--fresh",
             action="store_true",
             help="Allow repair:ios to recreate Podfile.lock",
+        )
+        parser.add_argument(
+            "--check",
+            action="store_true",
+            help="Preview the project upgrade and report whether it can succeed",
+        )
+        parser.add_argument(
+            "--to",
+            dest="target_version",
+            help="Upgrade to a specific OnRamp version",
+        )
+        parser.add_argument(
+            "--internal-upgrade",
+            action="store_true",
+            help=argparse.SUPPRESS,
         )
         project_type = parser.add_mutually_exclusive_group()
         project_type.add_argument(
@@ -830,6 +851,16 @@ React Native bundler. repair:ios preserves Podfile.lock unless --fresh is set.
         
         elif args.command == "repair:ios":
             return 0 if repair_ios(fresh=args.fresh) else 1
+
+        elif args.command == "upgrade":
+            frontend_env = ensure_node_env() if os.path.isdir(BUILD_DIR) else None
+            return 0 if upgrade_to_version(
+                PROJECT_ROOT,
+                requested_version=args.target_version,
+                check=args.check,
+                internal=args.internal_upgrade,
+                frontend_env=frontend_env,
+            ) else 1
 
         elif args.command == "del":
             return handle_del(args)
