@@ -32,7 +32,7 @@ def test_project_files_have_real_metadata_and_ignore_native_outputs(tmp_path):
     agents = (tmp_path / "AGENTS.md").read_text()
 
     assert 'name = "my-great-app"' in pyproject
-    assert '"onramp~=0.4.1"' in pyproject
+    assert '"onramp~=0.4.2"' in pyproject
     assert "build/ios/Pods/" in gitignore
     assert "build/" not in {
         line.strip() for line in gitignore.splitlines()
@@ -104,6 +104,96 @@ def test_create_new_project_publishes_only_after_both_layers_succeed(
     assert (tmp_path / "example" / "backend-ready").is_file()
     assert (tmp_path / "example" / "build" / "frontend-ready").is_file()
     assert (tmp_path / "example" / ".onramp" / "project.toml").is_file()
+    assert not list(tmp_path.glob(".example-onramp-*"))
+
+
+def test_create_new_project_preserves_initialized_git_repository(
+    tmp_path,
+    monkeypatch,
+):
+    target = tmp_path / "example"
+    git_directory = target / ".git"
+    git_directory.mkdir(parents=True)
+    (git_directory / "config").write_text("repository metadata")
+    monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
+
+    def fake_backend(_name, api_only=False, directory_path=None):
+        Path(directory_path, "app").mkdir()
+        Path(directory_path, "backend-ready").write_text("yes")
+        return True
+
+    def fake_frontend(_name, output, **_kwargs):
+        Path(output).mkdir()
+        Path(output, "frontend-ready").write_text("yes")
+        return True
+
+    monkeypatch.setattr(cli, "create_app_directory", fake_backend)
+    monkeypatch.setattr(cli, "create_frontend", fake_frontend)
+    monkeypatch.setattr(cli, "ensure_node_env", lambda: {})
+
+    assert cli.create_new_project("example")
+    assert (target / ".git" / "config").read_text() == "repository metadata"
+    assert (target / "backend-ready").is_file()
+    assert (target / "build" / "frontend-ready").is_file()
+
+
+def test_create_new_project_leaves_git_repository_when_frontend_fails(
+    tmp_path,
+    monkeypatch,
+):
+    target = tmp_path / "example"
+    git_directory = target / ".git"
+    git_directory.mkdir(parents=True)
+    (git_directory / "config").write_text("repository metadata")
+    monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
+
+    def fake_backend(_name, api_only=False, directory_path=None):
+        Path(directory_path, "app").mkdir()
+        return True
+
+    monkeypatch.setattr(cli, "create_app_directory", fake_backend)
+    monkeypatch.setattr(cli, "create_frontend", lambda *args, **kwargs: False)
+    monkeypatch.setattr(cli, "ensure_node_env", lambda: {})
+
+    assert not cli.create_new_project("example")
+    assert (target / ".git" / "config").read_text() == "repository metadata"
+    assert list(target.iterdir()) == [git_directory]
+    assert not list(tmp_path.glob(".example-onramp-*"))
+
+
+def test_create_new_project_restores_git_repository_when_publish_fails(
+    tmp_path,
+    monkeypatch,
+):
+    target = tmp_path / "example"
+    git_directory = target / ".git"
+    git_directory.mkdir(parents=True)
+    (git_directory / "config").write_text("repository metadata")
+    monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
+
+    def fake_backend(_name, api_only=False, directory_path=None):
+        Path(directory_path, "app").mkdir()
+        return True
+
+    def fake_frontend(_name, output, **_kwargs):
+        Path(output).mkdir()
+        return True
+
+    original_replace = cli.os.replace
+
+    def fail_publish(source, destination):
+        if Path(destination) == target:
+            raise OSError("publish failed")
+        original_replace(source, destination)
+
+    monkeypatch.setattr(cli, "create_app_directory", fake_backend)
+    monkeypatch.setattr(cli, "create_frontend", fake_frontend)
+    monkeypatch.setattr(cli, "ensure_node_env", lambda: {})
+    monkeypatch.setattr(cli.os, "replace", fail_publish)
+
+    assert not cli.create_new_project("example")
+    assert (target / ".git" / "config").read_text() == "repository metadata"
+    assert list(target.iterdir()) == [git_directory]
     assert not list(tmp_path.glob(".example-onramp-*"))
 
 

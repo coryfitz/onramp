@@ -40,6 +40,9 @@ print the exact source paths Metro may be reacting to.
 explicit Metro port is used for iOS and Android starts above it.
 The native command remains active while Metro is running; press Ctrl+C to stop
 the development process cleanly.
+Before launching, OnRamp checks the newest compatible iOS runtime or stable
+Android Emulator and system image. It asks before downloading, upgrading, or
+creating any global simulator components.
 
 ## Framework upgrades
 

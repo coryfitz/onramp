@@ -15,8 +15,8 @@ tools working on __ONRAMP_APP_NAME__.
 
 ## Commands
 
-- Create projects from their parent directory. The destination may be missing
-  or empty, but must not contain files.
+- Create projects from their parent directory. The destination may be missing,
+  empty, or contain only an initialized `.git` entry.
 - `onramp run` starts web development and starts Python only when `BACKEND=True`.
 - `onramp ios` and `onramp android` add missing native projects, install native
   dependencies, choose a device, build, and launch.
@@ -40,6 +40,8 @@ tools working on __ONRAMP_APP_NAME__.
 - Add native npm dependencies in `build/` with `npm install --legacy-peer-deps`,
   then rerun `onramp ios` or `onramp android` for autolinking and rebuilding.
 - OnRamp selects a free Metro port instead of reusing an unidentified server.
+- Native runs check the vendor's newest compatible simulator packages and ask
+  before installing, upgrading, or creating global emulator components.
 
 ## Routes and verification
 

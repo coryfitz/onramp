@@ -606,7 +606,8 @@ def create_new_project(
         if not os.path.isdir(target):
             print(f"Cannot create app: target is not a directory: {target}")
             return False
-        if os.listdir(target):
+        target_entries = os.listdir(target)
+        if target_entries and set(target_entries) != {".git"}:
             print(f"Cannot create app: target directory is not empty: {target}")
             return False
 
@@ -637,8 +638,21 @@ def create_new_project(
         write_project_manifest(staging, project_name=name)
 
         if os.path.isdir(target):
-            os.rmdir(target)
-        os.replace(staging, target)
+            target_git = os.path.join(target, ".git")
+            staged_git = os.path.join(staging, ".git")
+            preserves_git = os.path.lexists(target_git)
+            if preserves_git:
+                os.replace(target_git, staged_git)
+            try:
+                os.rmdir(target)
+                os.replace(staging, target)
+            except Exception:
+                if preserves_git and os.path.lexists(staged_git):
+                    os.makedirs(target, exist_ok=True)
+                    os.replace(staged_git, target_git)
+                raise
+        else:
+            os.replace(staging, target)
         print(f"✓ {FRAMEWORK_NAME} project created at {target}")
         return True
     except Exception as error:

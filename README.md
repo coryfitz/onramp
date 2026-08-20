@@ -30,8 +30,9 @@ onramp new <app_name>
 ```
 
 Run this command from the new app's parent directory. The destination may be
-missing or empty; OnRamp refuses non-empty destinations. Generation is staged
-and only published after the backend and frontend both succeed.
+missing, empty, or an initialized Git repository containing only `.git`;
+OnRamp refuses other non-empty destinations. Generation is staged and only
+published after the backend and frontend both succeed.
 
 The default is web-first: it creates the shared universal frontend without
 creating iOS or Android projects. Native projects are added automatically when
@@ -97,9 +98,22 @@ watcher when Watchman is missing or broken. If Fast Refresh repeats
 unexpectedly, run `onramp ios --watch-diagnostics`; OnRamp will print each
 relevant source event with its exact project-relative path.
 
-On macOS, `onramp ios` delegates the frontend launch to `onramp-js`. It adds the iOS project if it is missing, checks Xcode and CocoaPods, installs Pods, asks Xcode which simulators are actually compatible with the app, and selects one automatically. If the compatible iOS Simulator runtime is missing, OnRamp offers to download it before continuing. Xcode itself must still be installed separately; `onramp-js` uses Apple's installed toolchain.
+On macOS, `onramp ios` delegates the frontend launch to `onramp-js`. It
+adds the iOS project if it is missing, checks Xcode and CocoaPods, installs
+Pods, and checks Apple's preferred compatible Simulator runtime build on every
+launch. OnRamp asks before downloading a missing or newer runtime through
+Xcode, then selects a device on the newest installed runtime. If Xcode itself
+is absent, OnRamp can open its Mac App Store page after permission, but Apple
+requires the user to complete the Xcode installation.
 
-`onramp android` delegates the frontend launch to `onramp-js`. It adds the Android project if it is missing, locates an installed Android SDK and virtual device, adds `adb` and the emulator to the command environment, selects JDK 17 for Gradle, and wakes emulators restored from an asleep Quick Boot snapshot automatically. These settings apply only to the frontend process, so no shell-profile editing is required.
+`onramp android` delegates the frontend launch to `onramp-js`. It checks
+Google's stable package list on every launch and asks before installing or
+upgrading the Android Emulator, its stable system image, or a reusable virtual
+device. It can bootstrap verified current Android command-line tools when the
+installed `sdkmanager` is missing or obsolete. OnRamp selects JDK 17, enables
+macOS clipboard sharing, cold-starts the selected AVD, and wakes it
+automatically. These settings apply only to the frontend process, so no shell
+profile editing is required.
 
 Repair iOS dependencies while preserving the resolved versions:
 
@@ -127,7 +141,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.4.1
+onramp upgrade --to 0.4.2
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -139,7 +153,7 @@ stops and reports the conflict instead. Native projects remain lazy and are
 not rebuilt merely to upgrade project metadata.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.4.1`. Patch releases remain compatible with that project schema;
+`onramp~=0.4.2`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 
