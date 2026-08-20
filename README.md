@@ -127,7 +127,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.4.0
+onramp upgrade --to 0.4.1
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -139,7 +139,7 @@ stops and reports the conflict instead. Native projects remain lazy and are
 not rebuilt merely to upgrade project metadata.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.4.0`. Patch releases remain compatible with that project schema;
+`onramp~=0.4.1`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 
