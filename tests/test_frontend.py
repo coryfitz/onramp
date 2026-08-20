@@ -21,7 +21,7 @@ def test_installed_python_package_uses_current_published_frontend(monkeypatch):
     assert frontend._frontend_command(["--version"]) == [
         "npx",
         "--yes",
-        "onramp-js@0.4.1",
+        "onramp-js@0.4.2",
         "--version",
     ]
 
@@ -42,6 +42,23 @@ def test_run_frontend_forwards_metro_port(tmp_path, monkeypatch):
         metro_port=9090,
     )
     assert captured["command"][-2:] == ["--metro-port", "9090"]
+
+
+def test_run_frontend_forwards_watch_diagnostics(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run(command, cwd, env, action):
+        captured.update(command=command, cwd=cwd, env=env, action=action)
+        return True
+
+    monkeypatch.setattr(frontend, "_run_frontend_command", fake_run)
+
+    assert frontend.run_frontend(
+        "ios",
+        tmp_path,
+        watch_diagnostics=True,
+    )
+    assert captured["command"][-1] == "--watch-diagnostics"
 
 
 def test_mobile_is_forwarded_through_the_python_bridge(tmp_path, monkeypatch):

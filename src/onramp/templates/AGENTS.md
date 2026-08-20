@@ -23,6 +23,7 @@ tools working on __ONRAMP_APP_NAME__.
 - `onramp mobile` launches both native apps with separate Metro servers and at
   most one Python backend process.
 - `--port` is the Python server port. `--metro-port` is the React Native port.
+- `--watch-diagnostics` logs project-relative source events that can trigger native Fast Refresh.
 - `onramp doctor <platform>` performs a read-only toolchain check.
 - `onramp repair:ios` removes Pods but preserves `Podfile.lock`.
 - `onramp repair:ios --fresh` also removes the lockfile and may change versions.

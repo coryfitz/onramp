@@ -91,6 +91,12 @@ that is the iOS port and Android selects the next available port above it.
 The selected Metro process remains attached to the command; press Ctrl+C to
 stop it and any backend process OnRamp started for that run.
 
+Native doctor checks validate an installed Watchman binary. Metro uses
+Watchman when it is healthy and explicitly falls back to the native filesystem
+watcher when Watchman is missing or broken. If Fast Refresh repeats
+unexpectedly, run `onramp ios --watch-diagnostics`; OnRamp will print each
+relevant source event with its exact project-relative path.
+
 On macOS, `onramp ios` delegates the frontend launch to `onramp-js`. It adds the iOS project if it is missing, checks Xcode and CocoaPods, installs Pods, asks Xcode which simulators are actually compatible with the app, and selects one automatically. If the compatible iOS Simulator runtime is missing, OnRamp offers to download it before continuing. Xcode itself must still be installed separately; `onramp-js` uses Apple's installed toolchain.
 
 `onramp android` delegates the frontend launch to `onramp-js`. It adds the Android project if it is missing, locates an installed Android SDK and virtual device, adds `adb` and the emulator to the command environment, selects JDK 17 for Gradle, and wakes emulators restored from an asleep Quick Boot snapshot automatically. These settings apply only to the frontend process, so no shell-profile editing is required.

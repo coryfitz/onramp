@@ -57,6 +57,7 @@ change.
 - Never attach an app to an unidentified Metro server merely because port 8081
   responds. Select a free port and pass it through to the React Native CLI.
 - `--port` belongs to the Python backend; `--metro-port` belongs to Metro.
+- `--watch-diagnostics` must report exact project-relative native source events.
 - Default iOS repair preserves `Podfile.lock`; only `--fresh` may remove it.
 - Native project names are normalized and must remain stable after generation.
 - `onramp mobile` launches iOS and Android with separate Metro servers while

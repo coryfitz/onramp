@@ -207,7 +207,11 @@ def run_web(with_backend=True, port=8000):
         return run_frontend("web", BUILD_DIR, env=env)
 
 
-def run_ios(port: int = 8000, metro_port: int | None = None):
+def run_ios(
+    port: int = 8000,
+    metro_port: int | None = None,
+    watch_diagnostics: bool = False,
+):
     """Run iOS simulator; if BACKEND=True also start the backend dev server."""
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
@@ -224,6 +228,7 @@ def run_ios(port: int = 8000, metro_port: int | None = None):
             app_name=project_name,
             env=env,
             metro_port=metro_port,
+            watch_diagnostics=watch_diagnostics,
         )
         if not ios_process:
             return False
@@ -237,10 +242,15 @@ def run_ios(port: int = 8000, metro_port: int | None = None):
             app_name=project_name,
             env=env,
             metro_port=metro_port,
+            watch_diagnostics=watch_diagnostics,
         )
 
 
-def run_android(port: int = 8000, metro_port: int | None = None):
+def run_android(
+    port: int = 8000,
+    metro_port: int | None = None,
+    watch_diagnostics: bool = False,
+):
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
         return False
@@ -256,6 +266,7 @@ def run_android(port: int = 8000, metro_port: int | None = None):
             app_name=project_name,
             env=env,
             metro_port=metro_port,
+            watch_diagnostics=watch_diagnostics,
         )
         if not android_process:
             return False
@@ -269,10 +280,15 @@ def run_android(port: int = 8000, metro_port: int | None = None):
         app_name=project_name,
         env=env,
         metro_port=metro_port,
+        watch_diagnostics=watch_diagnostics,
     )
 
 
-def run_mobile(port: int = 8000, metro_port: int | None = None):
+def run_mobile(
+    port: int = 8000,
+    metro_port: int | None = None,
+    watch_diagnostics: bool = False,
+):
     """Run the iOS and Android apps with one shared backend process."""
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
@@ -289,6 +305,7 @@ def run_mobile(port: int = 8000, metro_port: int | None = None):
             app_name=project_name,
             env=env,
             metro_port=metro_port,
+            watch_diagnostics=watch_diagnostics,
         )
         if not mobile_process:
             return False
@@ -302,6 +319,7 @@ def run_mobile(port: int = 8000, metro_port: int | None = None):
         app_name=project_name,
         env=env,
         metro_port=metro_port,
+        watch_diagnostics=watch_diagnostics,
     )
 
 
@@ -727,9 +745,9 @@ def main():
   {FRAMEWORK_NAME.lower()} new <name> [--api | --mobile | --all]
   {FRAMEWORK_NAME.lower()} run [--port 8000]
   {FRAMEWORK_NAME.lower()} web
-  {FRAMEWORK_NAME.lower()} ios [--port 8000] [--metro-port 8081]
-  {FRAMEWORK_NAME.lower()} android [--port 8000] [--metro-port 8081]
-  {FRAMEWORK_NAME.lower()} mobile [--port 8000] [--metro-port 8081]
+  {FRAMEWORK_NAME.lower()} ios [--port 8000] [--metro-port 8081] [--watch-diagnostics]
+  {FRAMEWORK_NAME.lower()} android [--port 8000] [--metro-port 8081] [--watch-diagnostics]
+  {FRAMEWORK_NAME.lower()} mobile [--port 8000] [--metro-port 8081] [--watch-diagnostics]
   {FRAMEWORK_NAME.lower()} doctor [web|ios|android|mobile|all]
   {FRAMEWORK_NAME.lower()} repair:ios [--fresh]
   {FRAMEWORK_NAME.lower()} upgrade [--check] [--to VERSION]
@@ -738,7 +756,8 @@ def main():
   {FRAMEWORK_NAME.lower()} del <directory>
 
 The --port option controls the Python backend. --metro-port controls the
-React Native bundler. repair:ios preserves Podfile.lock unless --fresh is set.
+React Native bundler. --watch-diagnostics prints source paths that trigger
+Fast Refresh. repair:ios preserves Podfile.lock unless --fresh is set.
 upgrade creates recoverable backups and never overwrites modified managed files.
 """,
         )
@@ -750,6 +769,11 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             type=int,
             default=None,
             help="Preferred Metro port for iOS, Android, or mobile",
+        )
+        parser.add_argument(
+            "--watch-diagnostics",
+            action="store_true",
+            help="Log source paths that can trigger native Fast Refresh",
         )
         parser.add_argument(
             "--fresh",
@@ -818,18 +842,24 @@ upgrade creates recoverable backups and never overwrites modified managed files.
                 return 0 if run_command_logic(port=args.port) else 1
 
         elif args.command == "ios":
-            return 0 if run_ios(args.port, metro_port=args.metro_port) else 1
+            return 0 if run_ios(
+                args.port,
+                metro_port=args.metro_port,
+                watch_diagnostics=args.watch_diagnostics,
+            ) else 1
 
         elif args.command == "android":
             return 0 if run_android(
                 args.port,
                 metro_port=args.metro_port,
+                watch_diagnostics=args.watch_diagnostics,
             ) else 1
 
         elif args.command == "mobile":
             return 0 if run_mobile(
                 args.port,
                 metro_port=args.metro_port,
+                watch_diagnostics=args.watch_diagnostics,
             ) else 1
 
         elif args.command == "web":

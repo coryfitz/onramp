@@ -96,6 +96,7 @@ def run_frontend(
     app_name: str | None = None,
     env: Mapping[str, str] | None = None,
     metro_port: int | None = None,
+    watch_diagnostics: bool = False,
 ) -> bool:
     """Prepare and run a frontend platform with onramp-js."""
     if platform not in {"web", "ios", "android", "mobile"}:
@@ -107,6 +108,8 @@ def run_frontend(
         arguments.extend(["--name", app_name])
     if metro_port is not None:
         arguments.extend(["--metro-port", str(metro_port)])
+    if watch_diagnostics:
+        arguments.append("--watch-diagnostics")
 
     return _run_frontend_command(
         arguments,
@@ -122,6 +125,7 @@ def start_frontend(
     app_name: str | None = None,
     env: Mapping[str, str] | None = None,
     metro_port: int | None = None,
+    watch_diagnostics: bool = False,
 ) -> subprocess.Popen | None:
     """Start an onramp-js platform command without blocking Python."""
     if platform not in {"web", "ios", "android", "mobile"}:
@@ -133,6 +137,8 @@ def start_frontend(
         arguments.extend(["--name", app_name])
     if metro_port is not None:
         arguments.extend(["--metro-port", str(metro_port)])
+    if watch_diagnostics:
+        arguments.append("--watch-diagnostics")
 
     try:
         return subprocess.Popen(

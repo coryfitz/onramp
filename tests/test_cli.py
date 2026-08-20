@@ -147,9 +147,14 @@ def test_android_coordinates_backend_and_metro_port(tmp_path, monkeypatch):
     )
     cli.spawned_processes.clear()
 
-    assert cli.run_android(port=9000, metro_port=9090)
+    assert cli.run_android(
+        port=9000,
+        metro_port=9090,
+        watch_diagnostics=True,
+    )
     assert captured["platform"] == "android"
     assert captured["metro_port"] == 9090
+    assert captured["watch_diagnostics"] is True
     assert captured["backend_port"] == 9000
     cli.spawned_processes.clear()
 
@@ -188,19 +193,35 @@ def test_mobile_coordinates_both_apps_with_one_backend(tmp_path, monkeypatch):
 def test_main_dispatches_mobile_command(monkeypatch):
     captured = {}
 
-    def fake_mobile(port, metro_port=None):
-        captured.update(port=port, metro_port=metro_port)
+    def fake_mobile(port, metro_port=None, watch_diagnostics=False):
+        captured.update(
+            port=port,
+            metro_port=metro_port,
+            watch_diagnostics=watch_diagnostics,
+        )
         return True
 
     monkeypatch.setattr(cli, "run_mobile", fake_mobile)
     monkeypatch.setattr(
         cli.sys,
         "argv",
-        ["onramp", "mobile", "--port", "9000", "--metro-port", "9090"],
+        [
+            "onramp",
+            "mobile",
+            "--port",
+            "9000",
+            "--metro-port",
+            "9090",
+            "--watch-diagnostics",
+        ],
     )
 
     assert cli.main() == 0
-    assert captured == {"port": 9000, "metro_port": 9090}
+    assert captured == {
+        "port": 9000,
+        "metro_port": 9090,
+        "watch_diagnostics": True,
+    }
 
 
 def test_generated_aerich_config_is_portable(tmp_path):
