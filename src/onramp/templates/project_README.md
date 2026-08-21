@@ -48,7 +48,9 @@ The native command remains active while Metro is running; press Ctrl+C to stop
 the development process cleanly.
 Before launching, OnRamp checks the newest compatible iOS runtime or stable
 Android Emulator and system image. It asks before downloading, upgrading, or
-creating any global simulator components.
+creating any global simulator components. iOS downloads select the host
+architecture explicitly, and a failed optional runtime upgrade continues with
+an installed usable runtime.
 
 Native identity is declared in `build/app.json`. OnRamp synchronizes its
 display name, package and bundle identifiers, versions, build numbers, and

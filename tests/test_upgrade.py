@@ -29,7 +29,7 @@ def test_plans_legacy_project_as_schema_one_without_overwriting_user_files(
 ):
     root = create_legacy_project(tmp_path)
 
-    plan = upgrade.plan_project_upgrade(root, "0.5.2")
+    plan = upgrade.plan_project_upgrade(root, "0.5.3")
 
     assert plan.from_schema == 0
     assert plan.to_schema == 2
@@ -39,12 +39,12 @@ def test_plans_legacy_project_as_schema_one_without_overwriting_user_files(
     pyproject_change = next(
         change for change in plan.changes if change.relative_path == "pyproject.toml"
     )
-    assert '"onramp~=0.5.2"' in pyproject_change.content
+    assert '"onramp~=0.5.3"' in pyproject_change.content
 
 
 def test_applies_api_project_upgrade_with_manifest_and_backup(tmp_path):
     root = create_legacy_project(tmp_path)
-    plan = upgrade.plan_project_upgrade(root, "0.5.2")
+    plan = upgrade.plan_project_upgrade(root, "0.5.3")
 
     backup = upgrade.apply_project_upgrade(plan)
 
@@ -52,7 +52,7 @@ def test_applies_api_project_upgrade_with_manifest_and_backup(tmp_path):
     assert (backup / "pyproject.toml").is_file()
     assert (root / PROJECT_MANIFEST).is_file()
     assert read_project_manifest(root)["schema_version"] == 2
-    assert '"onramp~=0.5.2"' in (root / "pyproject.toml").read_text()
+    assert '"onramp~=0.5.3"' in (root / "pyproject.toml").read_text()
 
 
 def test_modified_managed_file_conflicts_when_framework_base_changed(tmp_path):
@@ -68,7 +68,7 @@ def test_modified_managed_file_conflicts_when_framework_base_changed(tmp_path):
         '[managed_files]\n"AGENTS.md" = "old-framework-hash"\n'
     )
 
-    plan = upgrade.plan_project_upgrade(root, "0.5.2")
+    plan = upgrade.plan_project_upgrade(root, "0.5.3")
 
     assert len(plan.conflicts) == 1
     assert "AGENTS.md was modified" in plan.conflicts[0]
@@ -77,7 +77,7 @@ def test_modified_managed_file_conflicts_when_framework_base_changed(tmp_path):
 def test_upgrade_adds_all_generated_native_and_route_ignores(tmp_path):
     root = create_legacy_project(tmp_path)
 
-    plan = upgrade.plan_project_upgrade(root, "0.5.2")
+    plan = upgrade.plan_project_upgrade(root, "0.5.3")
     gitignore = next(
         change.content for change in plan.changes
         if change.relative_path == ".gitignore"
@@ -101,7 +101,7 @@ def test_frontend_preflight_prevents_root_mutation(tmp_path, monkeypatch, capsys
 
     monkeypatch.setattr(upgrade, "upgrade_frontend", reject_frontend)
 
-    assert not upgrade.upgrade_project(root, "0.5.2", check=True)
+    assert not upgrade.upgrade_project(root, "0.5.3", check=True)
     assert calls[0]["check"] is True
     assert (root / "pyproject.toml").read_text() == original
     assert capsys.readouterr().out.strip().endswith(
@@ -118,7 +118,7 @@ def test_frontend_apply_failure_restores_root_files(tmp_path, monkeypatch):
 
     monkeypatch.setattr(upgrade, "upgrade_frontend", fail_on_apply)
 
-    assert not upgrade.upgrade_project(root, "0.5.2")
+    assert not upgrade.upgrade_project(root, "0.5.3")
     assert (root / "pyproject.toml").read_text() == original
     assert not (root / PROJECT_MANIFEST).exists()
 
@@ -127,7 +127,7 @@ def test_up_to_date_root_does_not_create_an_empty_backup(tmp_path, monkeypatch):
     root = create_legacy_project(tmp_path, with_frontend=True)
     (root / "pyproject.toml").write_text(
         '[project]\nname = "example"\ndependencies = [\n'
-        '    "onramp~=0.5.2",\n]\n'
+        '    "onramp~=0.5.3",\n]\n'
     )
     (root / ".gitignore").write_text(upgrade._updated_gitignore(".venv/\n"))
     (root / "AGENTS.md").write_text(target_managed_files(root)["AGENTS.md"])
@@ -144,7 +144,7 @@ def test_up_to_date_root_does_not_create_an_empty_backup(tmp_path, monkeypatch):
 
     monkeypatch.setattr(upgrade, "upgrade_frontend", successful_frontend)
 
-    assert upgrade.upgrade_project(root, "0.5.2")
+    assert upgrade.upgrade_project(root, "0.5.3")
     assert calls == [{"env": None, "check": True}, {
         "env": None,
         "quiet": True,
@@ -181,7 +181,7 @@ def test_newer_target_is_delegated_to_temporary_release(tmp_path, monkeypatch):
 def test_successful_check_ends_with_a_clear_verdict(tmp_path, capsys):
     root = create_legacy_project(tmp_path)
 
-    assert upgrade.upgrade_project(root, "0.5.2", check=True)
+    assert upgrade.upgrade_project(root, "0.5.3", check=True)
 
     assert capsys.readouterr().out.strip().endswith(
         "the upgrade should be successful."
@@ -200,7 +200,7 @@ def test_current_virtual_environment_updates_with_uv(monkeypatch):
         lambda command, check: calls.append((command, check)),
     )
 
-    upgrade._update_current_cli("0.5.2")
+    upgrade._update_current_cli("0.5.3")
 
     assert calls == [
         ([
@@ -210,6 +210,6 @@ def test_current_virtual_environment_updates_with_uv(monkeypatch):
             "--python",
             "/tmp/example-venv/bin/python",
             "--upgrade",
-            "onramp==0.5.2",
+            "onramp==0.5.3",
         ], True)
     ]
