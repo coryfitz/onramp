@@ -32,7 +32,7 @@ def test_project_files_have_real_metadata_and_ignore_native_outputs(tmp_path):
     agents = (tmp_path / "AGENTS.md").read_text()
 
     assert 'name = "my-great-app"' in pyproject
-    assert '"onramp~=0.4.2"' in pyproject
+    assert '"onramp~=0.5.1"' in pyproject
     assert "build/ios/Pods/" in gitignore
     assert "build/" not in {
         line.strip() for line in gitignore.splitlines()

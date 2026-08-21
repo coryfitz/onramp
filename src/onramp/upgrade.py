@@ -52,6 +52,7 @@ class ProjectUpgradePlan:
 
 PROJECT_MIGRATIONS = {
     0: "adopt compatible dependencies, backups, and versioned project metadata",
+    1: "ignore generated native and platform-specific route output",
 }
 
 
@@ -110,7 +111,17 @@ def _updated_pyproject(content: str, target_version: str) -> str | None:
 
 
 def _updated_gitignore(content: str) -> str:
-    required = (".onramp/backups/", "build/.onramp/backups/")
+    required = (
+        "build/src/generated/routes.android.ts",
+        "build/src/generated/routes.ios.ts",
+        "build/src/generated/routes.web.ts",
+        "build/android/.kotlin/",
+        "build/android/app/.cxx/",
+        "build/.bundle/",
+        "build/.metro-health-check*",
+        ".onramp/backups/",
+        "build/.onramp/backups/",
+    )
     lines = content.splitlines()
     existing = {line.strip() for line in lines}
     missing = [line for line in required if line not in existing]
@@ -118,7 +129,7 @@ def _updated_gitignore(content: str) -> str:
         return content
     if content and not content.endswith("\n"):
         content += "\n"
-    return content + "\n# OnRamp upgrade backups\n" + "\n".join(missing) + "\n"
+    return content + "\n# OnRamp generated and recoverable output\n" + "\n".join(missing) + "\n"
 
 
 def plan_project_upgrade(

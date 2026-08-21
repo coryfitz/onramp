@@ -21,14 +21,21 @@ build/dist/
 build/coverage/
 build/.DS_Store
 build/src/.DS_Store
+build/src/generated/routes.android.ts
+build/src/generated/routes.ios.ts
+build/src/generated/routes.web.ts
 
 # Native generated dependencies and build output
 build/ios/Pods/
 build/ios/build/
 build/ios/.xcode.env.local
 build/android/.gradle/
+build/android/.kotlin/
 build/android/app/build/
+build/android/app/.cxx/
 build/android/build/
+build/.bundle/
+build/.metro-health-check*
 
 # Tooling
 .onramp/backups/

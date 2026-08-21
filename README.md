@@ -115,6 +115,18 @@ macOS clipboard sharing, cold-starts the selected AVD, and wakes it
 automatically. These settings apply only to the frontend process, so no shell
 profile editing is required.
 
+Native application identity is configured once in `build/app.json`. On every
+native add or run, OnRamp synchronizes the human display name, Android
+application ID and version, iOS bundle ID and version, and a validated
+1024×1024 PNG launcher icon. Native identifiers remain stable and separate
+from human-facing names.
+
+Apps that need device-only secret storage can opt into
+`onramp-js/secure-storage` by installing `react-native-keychain` inside
+`build/`. The adapter selects non-cloud, device-only iOS Keychain protection
+and Android Keystore-backed storage and refuses to fall back to browser
+storage.
+
 Repair iOS dependencies while preserving the resolved versions:
 
 ```
@@ -141,7 +153,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.4.2
+onramp upgrade --to 0.5.1
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -150,10 +162,12 @@ and npm metadata structurally, and saves changed files under
 `.onramp/backups/`. Unchanged framework files update automatically. A managed
 file edited by the application developer is never overwritten; the upgrade
 stops and reports the conflict instead. Native projects remain lazy and are
-not rebuilt merely to upgrade project metadata.
+not rebuilt merely to upgrade project metadata. Platform route registries are
+generated separately for iOS, Android, and web so simultaneous mobile runs do
+not overwrite shared route state.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.4.2`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.1`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 

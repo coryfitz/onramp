@@ -37,6 +37,10 @@ tools working on __ONRAMP_APP_NAME__.
   `app.json`, `.nvmrc`, and the relevant native directory.
 - A filesystem name such as `my-app` becomes a native identifier such as
   `MyApp`. Do not rename the project root after generating native projects.
+- `build/app.json` is the declarative source for native display names,
+  application identifiers, versions, build numbers, and the launcher icon.
+- Use `onramp-js/secure-storage` for opted-in device-only secrets after adding
+  `react-native-keychain`; never substitute browser storage for credentials.
 - Add native npm dependencies in `build/` with `npm install --legacy-peer-deps`,
   then rerun `onramp ios` or `onramp android` for autolinking and rebuilding.
 - OnRamp selects a free Metro port instead of reusing an unidentified server.
@@ -45,8 +49,9 @@ tools working on __ONRAMP_APP_NAME__.
 
 ## Routes and verification
 
-- Routes come from files under `build/app/` and are written to
-  `build/src/generated/routes.ts`.
+- Routes come from files under `build/app/`. The deterministic fallback is
+  `build/src/generated/routes.ts`; Metro and Webpack use ignored platform
+  siblings so concurrent iOS and Android runs cannot overwrite one another.
 - Metro and Webpack regenerate routes during development. For deterministic
   checks, run `npm run build:routes` in `build/`.
 - Before handoff, run relevant Python tests, frontend tests/type checks, and at

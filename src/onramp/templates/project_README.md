@@ -44,6 +44,10 @@ Before launching, OnRamp checks the newest compatible iOS runtime or stable
 Android Emulator and system image. It asks before downloading, upgrading, or
 creating any global simulator components.
 
+Native identity is declared in `build/app.json`. OnRamp synchronizes its
+display name, package and bundle identifiers, versions, build numbers, and
+1024×1024 PNG launcher icon on every native add or run.
+
 ## Framework upgrades
 
 Check or preview an upgrade before applying it:
@@ -75,3 +79,8 @@ onramp ios
 `onramp repair:ios` preserves `Podfile.lock`. Use
 `onramp repair:ios --fresh` only when you deliberately want to resolve a new
 native dependency lockfile.
+
+For device-only credentials, install `react-native-keychain@^10.0.0` inside
+`build/` and import the secure value or JSON helpers from
+`onramp-js/secure-storage`. The optional adapter uses device-only iOS Keychain
+protection and Android Keystore-backed storage and rejects web use.
