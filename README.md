@@ -81,9 +81,10 @@ onramp android
 onramp mobile
 ```
 
-`onramp mobile` prepares and launches both native apps. Each platform gets its
-own project-owned Metro server, and a backend-enabled project starts only one
-Python server for both apps.
+`onramp mobile` prepares both native apps and launches Android before iOS so the
+faster emulator is available first. Each platform gets its own project-owned
+Metro server, and a backend-enabled project starts only one Python server for
+both apps.
 
 Check a toolchain without changing the generated app:
 
@@ -96,7 +97,7 @@ onramp doctor android
 `--port` controls the Python backend. Native commands independently select a
 free Metro port so they never attach to an unidentified bundler on port 8081.
 Use `--metro-port <port>` to request a specific free port. For `onramp mobile`,
-that is the iOS port and Android selects the next available port above it.
+that is the Android port and iOS selects the next available port above it.
 The selected Metro process remains attached to the command; press Ctrl+C to
 stop it and any backend process OnRamp started for that run.
 
@@ -129,7 +130,10 @@ complete the Xcode installation.
 Google's stable package list on every launch and asks before installing or
 upgrading the Android Emulator, its stable system image, or a reusable virtual
 device. It can bootstrap verified current Android command-line tools when the
-installed `sdkmanager` is missing or obsolete. OnRamp selects JDK 17, enables
+installed `sdkmanager` is missing or obsolete. When Google's installer prints
+only a download URL, OnRamp displays byte progress and then reports extraction
+while the official Android CLI retains responsibility for installation and
+verification. OnRamp selects JDK 17, enables
 macOS clipboard sharing, cold-starts the selected AVD, and wakes it
 automatically. These settings apply only to the frontend process, so no shell
 profile editing is required.
@@ -172,7 +176,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.5
+onramp upgrade --to 0.5.6
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -186,7 +190,7 @@ generated separately for iOS, Android, and web so simultaneous mobile runs do
 not overwrite shared route state.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.5`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.6`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 

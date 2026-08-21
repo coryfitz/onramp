@@ -64,6 +64,10 @@ change.
   sharing at most one Python backend process.
 - `onramp mobile` completes every interactive native prerequisite check before
   starting either Metro server. Its Metro children must not read terminal input.
+- After those preflights, `onramp mobile` launches Android before iOS and gives
+  Android the requested Metro port so the faster emulator is available first.
+- Long native component installs must surface byte progress when the provider
+  exposes enough information and an elapsed activity state otherwise.
 - An optional native component that its provider rejects must not be presented
   as certainly downloadable or repeatedly offered without changed metadata or
   an explicit retry interval.
