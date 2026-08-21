@@ -33,6 +33,7 @@ jobs:
           python - <<'PYTHON'
           import os
           from pathlib import Path
+          import time
           import tomllib
           from urllib.error import HTTPError
           from urllib.parse import quote
@@ -62,16 +63,23 @@ jobs:
                   "https://registry.npmjs.org/"
                   f"onramp-js/{quote(frontend_version, safe='')}"
               )
-              try:
-                  with urlopen(frontend_url, timeout=30):
-                      pass
-              except HTTPError as error:
-                  if error.code == 404:
-                      raise RuntimeError(
-                          "Cannot publish OnRamp before matching frontend "
-                          f"onramp-js@{frontend_version} is available on npm."
-                      ) from error
-                  raise
+              for attempt in range(1, 121):
+                  try:
+                      with urlopen(frontend_url, timeout=30):
+                          break
+                  except HTTPError as error:
+                      if error.code != 404:
+                          raise
+                      if attempt == 120:
+                          raise RuntimeError(
+                              "Cannot publish OnRamp before matching frontend "
+                              f"onramp-js@{frontend_version} is available on npm."
+                          ) from error
+                      print(
+                          f"Waiting for npm to process onramp-js@{frontend_version} "
+                          f"({attempt}/120)..."
+                      )
+                      time.sleep(5)
               print(f"Required frontend onramp-js@{frontend_version} is published.")
 
           status = "is already published" if already_published else "is new and will be published"

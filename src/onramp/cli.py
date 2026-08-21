@@ -23,7 +23,7 @@ from .frontend import (
     run_frontend,
     start_frontend,
 )
-from .project import write_project_manifest
+from .project import package_version, write_project_manifest
 from .upgrade import upgrade_to_version
 from types import SimpleNamespace
 import re
@@ -480,6 +480,7 @@ def write_project_files(project_root: str, name: str, api_only: bool = False):
         "__ONRAMP_APP_NAME__": name,
         "__ONRAMP_PROJECT_NAME__": _project_distribution_name(name),
         "__ONRAMP_PROJECT_KIND__": "API-only" if api_only else "full-stack",
+        "__ONRAMP_VERSION__": package_version(),
     }
     _write_project_template(
         "project_README.md",

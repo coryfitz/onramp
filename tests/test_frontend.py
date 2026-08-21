@@ -17,11 +17,16 @@ def test_installed_python_package_uses_current_published_frontend(monkeypatch):
         "_local_frontend_bin",
         lambda: Path("/missing/onramp-js.js"),
     )
+    monkeypatch.setattr(
+        frontend,
+        "_frontend_package_version",
+        lambda: "9.8.7",
+    )
 
     assert frontend._frontend_command(["--version"]) == [
         "npx",
         "--yes",
-        "onramp-js@0.5.3",
+        "onramp-js@9.8.7",
         "--version",
     ]
 

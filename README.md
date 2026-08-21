@@ -100,6 +100,12 @@ that is the iOS port and Android selects the next available port above it.
 The selected Metro process remains attached to the command; press Ctrl+C to
 stop it and any backend process OnRamp started for that run.
 
+`onramp mobile` completes all interactive iOS and Android checks before either
+Metro server starts. It then opens both emulator applications, keeps terminal
+input in the coordinating OnRamp process, and prefixes concurrent Metro output
+with `[iOS]` and `[Android]`. This prevents one platform's development server
+from hiding or consuming the other platform's installation prompt.
+
 Native doctor checks validate an installed Watchman binary. Metro uses
 Watchman when it is healthy and explicitly falls back to the native filesystem
 watcher when Watchman is missing or broken. If Fast Refresh repeats
@@ -163,7 +169,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.3
+onramp upgrade --to 0.5.4
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -177,7 +183,7 @@ generated separately for iOS, Android, and web so simultaneous mobile runs do
 not overwrite shared route state.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.3`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.4`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 

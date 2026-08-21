@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from onramp import cli
 from onramp.db import manager as db_manager_module
 from onramp.db import migrations as migrations_module
+from onramp.project import package_version
 
 
 def test_is_port_in_use():
@@ -32,7 +33,7 @@ def test_project_files_have_real_metadata_and_ignore_native_outputs(tmp_path):
     agents = (tmp_path / "AGENTS.md").read_text()
 
     assert 'name = "my-great-app"' in pyproject
-    assert '"onramp~=0.5.3"' in pyproject
+    assert f'"onramp~={package_version()}"' in pyproject
     assert "build/ios/Pods/" in gitignore
     assert "build/" not in {
         line.strip() for line in gitignore.splitlines()

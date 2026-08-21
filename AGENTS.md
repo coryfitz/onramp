@@ -62,4 +62,6 @@ change.
 - Native project names are normalized and must remain stable after generation.
 - `onramp mobile` launches iOS and Android with separate Metro servers while
   sharing at most one Python backend process.
+- `onramp mobile` completes every interactive native prerequisite check before
+  starting either Metro server. Its Metro children must not read terminal input.
 - Python-wrapper output must not suggest or describe raw npm/npx commands.
