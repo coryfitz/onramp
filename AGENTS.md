@@ -92,6 +92,11 @@ change.
   explicitly install and launch the app on that device when others are online.
 - Native navigation to the initial route is a stack reset. Generated Home
   controls, including error screens, must work without browser globals.
+- Bind iOS simulators to Metro through numeric IPv4 loopback. Avoid
+  `localhost`, whose dual-stack resolution can repeatedly disconnect Fast
+  Refresh on iOS 26 simulator runtimes.
+- Use Metro's native file watcher on macOS. Watchman can surface dependency
+  metadata-only events as empty Fast Refresh cycles even when source is idle.
 - An optional native component that its provider rejects must not be presented
   as certainly downloadable or repeatedly offered without changed metadata or
   an explicit retry interval.
