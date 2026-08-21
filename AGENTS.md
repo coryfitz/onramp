@@ -68,6 +68,9 @@ change.
   Android the requested Metro port so the faster emulator is available first.
 - Long native component installs must surface byte progress when the provider
   exposes enough information and an elapsed activity state otherwise.
+- Android SDK installs must select the native host platform explicitly. On
+  macOS, detect a non-native Emulator executable before launch, ask before
+  repairing it, and surface an Emulator's early startup failure diagnostics.
 - An optional native component that its provider rejects must not be presented
   as certainly downloadable or repeatedly offered without changed metadata or
   an explicit retry interval.

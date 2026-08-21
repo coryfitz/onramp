@@ -133,8 +133,13 @@ device. It can bootstrap verified current Android command-line tools when the
 installed `sdkmanager` is missing or obsolete. When Google's installer prints
 only a download URL, OnRamp displays byte progress and then reports extraction
 while the official Android CLI retains responsibility for installation and
-verification. OnRamp selects JDK 17, enables
-macOS clipboard sharing, cold-starts the selected AVD, and wakes it
+verification. OnRamp gives that CLI an explicit native host platform,
+preventing a translated CLI executable from installing an Emulator for the
+wrong CPU architecture. On macOS it checks the installed Emulator binary and
+offers to reinstall a mismatched copy for the native architecture. Emulator
+processes that exit during startup report their own diagnostics immediately
+instead of appearing to hang until the boot timeout. OnRamp selects JDK 17,
+enables macOS clipboard sharing, cold-starts the selected AVD, and wakes it
 automatically. These settings apply only to the frontend process, so no shell
 profile editing is required.
 
@@ -176,7 +181,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.6
+onramp upgrade --to 0.5.7
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -190,7 +195,7 @@ generated separately for iOS, Android, and web so simultaneous mobile runs do
 not overwrite shared route state.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.6`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.7`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 
