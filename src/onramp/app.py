@@ -11,7 +11,7 @@ import asyncio
 from functools import wraps
 from typing import List
 
-from onramp.db.manager import register_db_with_app
+from onramp.db.manager import database_lifespan
 
 
 def sync(func):
@@ -267,12 +267,10 @@ class OnRamp:
     def create_app(self):
         """Create the Starlette application"""
         self.discover_file_routes()
-        app = Starlette(routes=self.routes)
-        
-        # Register database with the app for auto startup/shutdown
-        register_db_with_app(app, self.app_dir)
-        
-        return app
+        return Starlette(
+            routes=self.routes,
+            lifespan=database_lifespan(self.app_dir),
+        )
 
 
 # Create your OnRamp app instance

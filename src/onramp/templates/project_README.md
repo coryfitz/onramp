@@ -32,6 +32,12 @@ onramp doctor ios
 the Python server. The generated default is `False`; the backend scaffold is
 still present and can be enabled later.
 
+Database connections use Starlette lifespan startup and shutdown. During local
+development, `ENVIRONMENT="development"` and `AUTO_GENERATE_SCHEMAS=True` can
+create missing tables automatically. OnRamp never generates schemas in other
+environments. Set `ONRAMP_ENVIRONMENT=production` and apply Aerich migrations
+before running a deployed backend.
+
 `--port` controls the Python server. `--metro-port` selects a React Native
 Metro port. OnRamp automatically selects a free Metro port when it is omitted.
 If Fast Refresh repeats unexpectedly, run `onramp ios --watch-diagnostics` to

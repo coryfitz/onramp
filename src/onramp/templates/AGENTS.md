@@ -12,6 +12,9 @@ tools working on __ONRAMP_APP_NAME__.
 - `build/ios/` and `build/android/` are native projects generated lazily.
 - `BACKEND=False` disables launching the server; it does not mean the backend
   scaffold is absent.
+- Database startup and shutdown use Starlette lifespan management.
+- Automatic schema generation is allowed only when `ENVIRONMENT` or
+  `ONRAMP_ENVIRONMENT` is exactly `development`; deployments use migrations.
 
 ## Commands
 

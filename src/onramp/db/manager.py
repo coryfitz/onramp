@@ -1,12 +1,11 @@
 """
 Database connection and management for OnRamp
 """
+from contextlib import asynccontextmanager
+import importlib.util
 import os
 import sys
-import importlib.util
 from tortoise import Tortoise
-from tortoise.contrib.starlette import register_tortoise
-from typing import Dict, Any, List
 
 class DatabaseManager:
     """Manages database connections and model discovery"""
@@ -38,6 +37,8 @@ class DatabaseManager:
         if not os.path.exists(settings_path):
             # Return default settings
             return {
+                'ENVIRONMENT': 'development',
+                'AUTO_GENERATE_SCHEMAS': True,
                 'DATABASE': {
                     'engine': 'sqlite',
                     'name': 'db.sqlite3',
@@ -58,8 +59,35 @@ class DatabaseManager:
             'engine': 'sqlite',
             'name': 'db.sqlite3',
         })
-        
-        return {'DATABASE': database_config}
+
+        return {
+            'ENVIRONMENT': getattr(
+                settings_module,
+                'ENVIRONMENT',
+                'development',
+            ),
+            'AUTO_GENERATE_SCHEMAS': getattr(
+                settings_module,
+                'AUTO_GENERATE_SCHEMAS',
+                True,
+            ),
+            'DATABASE': database_config,
+        }
+
+    def environment(self):
+        """Return the normalized runtime environment name."""
+        value = os.environ.get(
+            'ONRAMP_ENVIRONMENT',
+            self.settings.get('ENVIRONMENT', 'development'),
+        )
+        return str(value).strip().lower()
+
+    def should_generate_schemas(self):
+        """Allow automatic schema creation only during development."""
+        return (
+            self.environment() == 'development'
+            and bool(self.settings.get('AUTO_GENERATE_SCHEMAS', True))
+        )
     
     def _get_database_url(self):
         """Generate database URL from settings"""
@@ -169,13 +197,23 @@ async def close_db():
     await Tortoise.close_connections()
     print("Database connections closed")
 
-def register_db_with_app(app, app_dir: str = None):
-    """Register database with Starlette app (for auto startup/shutdown)"""
+def database_lifespan(app_dir: str = None):
+    """Create a Starlette lifespan that owns the database connection."""
     manager = get_db_manager(app_dir)
-    config = manager.get_tortoise_config()
-    
-    register_tortoise(
-        app,
-        config=config,
-        generate_schemas=True,  # Auto-create tables in development
-    )
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        initialized = False
+        try:
+            await Tortoise.init(config=manager.get_tortoise_config())
+            initialized = True
+            if manager.should_generate_schemas():
+                await Tortoise.generate_schemas()
+            print(f"Database initialized: {manager._get_database_url()}")
+            yield
+        finally:
+            if initialized:
+                await Tortoise.close_connections()
+                print("Database connections closed")
+
+    return lifespan

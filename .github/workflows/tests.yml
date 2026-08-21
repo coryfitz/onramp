@@ -1,0 +1,44 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  starlette-compatibility:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11"]
+        starlette: [minimum, latest]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install OnRamp and test dependencies
+        run: python -m pip install --upgrade --editable ".[dev]"
+
+      - name: Select minimum supported Starlette
+        if: matrix.starlette == 'minimum'
+        run: python -m pip install "starlette==0.47.3"
+
+      - name: Select newest supported Starlette
+        if: matrix.starlette == 'latest'
+        run: python -m pip install --upgrade "starlette<2"
+
+      - name: Verify dependency compatibility
+        run: |
+          python -m pip check
+          python -c "from importlib.metadata import version; print('Starlette', version('starlette'))"
+
+      - name: Run tests
+        run: python -m pytest

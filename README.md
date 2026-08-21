@@ -65,6 +65,14 @@ If you have only created an API (there is no frontend build folder) then onramp 
 
 If you created a fullstack app, then onramp run will start the dev server for the frontend app and will also start the dev server for the backend app if in your settings you have BACKEND = True.
 
+OnRamp manages database startup and shutdown through Starlette's lifespan API.
+New projects default to `ENVIRONMENT="development"` and
+`AUTO_GENERATE_SCHEMAS=True`, which creates missing tables for local
+development. Automatic schema creation is always disabled outside the
+`development` environment, even if the flag is left enabled. Set
+`ONRAMP_ENVIRONMENT=production` (or update `app/settings.py`) and apply Aerich
+migrations before starting a deployed backend.
+
 Run a native app from the project directory:
 
 ```
@@ -153,7 +161,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.1
+onramp upgrade --to 0.5.2
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -167,7 +175,7 @@ generated separately for iOS, Android, and web so simultaneous mobile runs do
 not overwrite shared route state.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.1`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.2`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 

@@ -32,12 +32,28 @@ def test_project_files_have_real_metadata_and_ignore_native_outputs(tmp_path):
     agents = (tmp_path / "AGENTS.md").read_text()
 
     assert 'name = "my-great-app"' in pyproject
-    assert '"onramp~=0.5.1"' in pyproject
+    assert '"onramp~=0.5.2"' in pyproject
     assert "build/ios/Pods/" in gitignore
     assert "build/" not in {
         line.strip() for line in gitignore.splitlines()
     }
     assert "build/ is the editable" in agents.replace(chr(96), "")
+
+
+def test_generated_settings_limit_schema_generation_to_development(tmp_path, monkeypatch):
+    target = tmp_path / "api-app"
+    monkeypatch.setattr(cli, "init_migrations", lambda _app_dir: True)
+
+    assert cli.create_app_directory(
+        "api-app",
+        api_only=True,
+        directory_path=str(target),
+    )
+
+    settings = (target / "app" / "settings.py").read_text()
+    assert "ENVIRONMENT = 'development'" in settings
+    assert "AUTO_GENERATE_SCHEMAS = True" in settings
+    assert "ignores this setting unless" in settings
 
 
 def test_create_app_directory_accepts_empty_target_and_skips_netlify_for_api(

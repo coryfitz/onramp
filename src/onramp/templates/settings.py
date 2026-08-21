@@ -4,6 +4,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 BACKEND = False
 
+# Runtime environment. ONRAMP_ENVIRONMENT can override this at launch.
+ENVIRONMENT = 'development'
+
+# Convenient for local development only. OnRamp ignores this setting unless
+# ENVIRONMENT (or ONRAMP_ENVIRONMENT) is exactly "development". Use Aerich
+# migrations to prepare non-development databases.
+AUTO_GENERATE_SCHEMAS = True
+
 # Database Configuration
 DATABASE = {
     'engine': 'sqlite',        # sqlite, postgresql, mysql

@@ -21,7 +21,7 @@ def test_installed_python_package_uses_current_published_frontend(monkeypatch):
     assert frontend._frontend_command(["--version"]) == [
         "npx",
         "--yes",
-        "onramp-js@0.5.1",
+        "onramp-js@0.5.2",
         "--version",
     ]
 
