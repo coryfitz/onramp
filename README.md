@@ -118,7 +118,10 @@ Pods, and checks Apple's preferred compatible Simulator runtime build on every
 launch. OnRamp asks before downloading a missing or newer runtime through
 Xcode, requests the exact build for the host architecture, and retries Xcode's
 latest compatible runtime when necessary. A failed optional upgrade continues
-with an installed usable runtime. If Xcode itself is absent, OnRamp can open
+with an installed usable runtime. When Xcode rejects both download forms,
+OnRamp suppresses that exact failed build combination for 24 hours while
+continuing to check changed Xcode or runtime metadata immediately. If Xcode
+itself is absent, OnRamp can open
 its Mac App Store page after permission, but Apple requires the user to
 complete the Xcode installation.
 
@@ -169,7 +172,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.4
+onramp upgrade --to 0.5.5
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -183,7 +186,7 @@ generated separately for iOS, Android, and web so simultaneous mobile runs do
 not overwrite shared route state.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.4`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.5`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 

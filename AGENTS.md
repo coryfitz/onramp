@@ -64,4 +64,7 @@ change.
   sharing at most one Python backend process.
 - `onramp mobile` completes every interactive native prerequisite check before
   starting either Metro server. Its Metro children must not read terminal input.
+- An optional native component that its provider rejects must not be presented
+  as certainly downloadable or repeatedly offered without changed metadata or
+  an explicit retry interval.
 - Python-wrapper output must not suggest or describe raw npm/npx commands.
