@@ -2,14 +2,88 @@ name: Publish to PyPI
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: publish-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
+  check_version:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.registry.outputs.publish }}
+      version: ${{ steps.registry.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Check whether this version is already on PyPI
+        id: registry
+        run: |
+          python - <<'PYTHON'
+          import os
+          from pathlib import Path
+          import tomllib
+          from urllib.error import HTTPError
+          from urllib.parse import quote
+          from urllib.request import urlopen
+
+          with Path("pyproject.toml").open("rb") as pyproject_file:
+              project = tomllib.load(pyproject_file)["project"]
+
+          package_name = project["name"]
+          package_version = project["version"]
+          registry_url = (
+              "https://pypi.org/pypi/"
+              f"{quote(package_name, safe='')}/{quote(package_version, safe='')}/json"
+          )
+          try:
+              with urlopen(registry_url, timeout=30):
+                  already_published = True
+          except HTTPError as error:
+              if error.code != 404:
+                  raise
+              already_published = False
+
+          if not already_published:
+              with Path("src/onramp/config.toml").open("rb") as config_file:
+                  frontend_version = tomllib.load(config_file)["onramp_js_version"]
+              frontend_url = (
+                  "https://registry.npmjs.org/"
+                  f"onramp-js/{quote(frontend_version, safe='')}"
+              )
+              try:
+                  with urlopen(frontend_url, timeout=30):
+                      pass
+              except HTTPError as error:
+                  if error.code == 404:
+                      raise RuntimeError(
+                          "Cannot publish OnRamp before matching frontend "
+                          f"onramp-js@{frontend_version} is available on npm."
+                      ) from error
+                  raise
+              print(f"Required frontend onramp-js@{frontend_version} is published.")
+
+          status = "is already published" if already_published else "is new and will be published"
+          print(f"{package_name}=={package_version} {status}.")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as github_output:
+              github_output.write(f"version={package_version}\n")
+              github_output.write(f"publish={str(not already_published).lower()}\n")
+          PYTHON
+
   build:
+    needs: check_version
+    if: needs.check_version.outputs.publish == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -25,11 +99,6 @@ jobs:
           python -m pip check
           python -m pytest
 
-      - name: Verify tag matches package version
-        run: |
-          package_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          test "v${package_version}" = "${GITHUB_REF_NAME}"
-
       - name: Build package distributions
         run: |
           python -m pip install --upgrade build
@@ -43,7 +112,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [check_version, build]
+    if: needs.check_version.outputs.publish == 'true' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
