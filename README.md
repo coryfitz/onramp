@@ -100,6 +100,10 @@ Use `--metro-port <port>` to request a specific free port. For `onramp mobile`,
 that is the Android port and iOS selects the next available port above it.
 The selected Metro process remains attached to the command; press Ctrl+C to
 stop it and any backend process OnRamp started for that run.
+If a coordinated frontend or native preflight fails, OnRamp stops the backend
+and returns the failure instead of leaving a backend-only watcher running. The
+backend watcher reloads for Python source changes while ignoring SQLite,
+bytecode, static-file, and directory activity.
 
 `onramp mobile` completes all interactive iOS and Android checks before either
 Metro server starts. It then opens both emulator applications, keeps terminal
@@ -136,12 +140,15 @@ while the official Android CLI retains responsibility for installation and
 verification. OnRamp gives that CLI an explicit native host platform,
 preventing a translated CLI executable from installing an Emulator for the
 wrong CPU architecture. On macOS it checks the installed Emulator binary and
-offers to reinstall a mismatched copy for the native architecture. Emulator
-processes that exit during startup report their own diagnostics immediately
-instead of appearing to hang until the boot timeout. OnRamp selects JDK 17,
-enables macOS clipboard sharing, cold-starts the selected AVD, and wakes it
-automatically. These settings apply only to the frontend process, so no shell
-profile editing is required.
+offers to replace a mismatched copy for the native architecture. After
+permission, it removes only the incompatible Emulator package, installs the
+native package, and verifies the resulting executable; AVDs and system images
+remain untouched. Provider URL or checksum mismatches are failures even when
+the provider exits with status zero. Emulator processes that exit during
+startup report their own diagnostics immediately instead of appearing to hang
+until the boot timeout. OnRamp selects JDK 17, enables macOS clipboard sharing,
+cold-starts the selected AVD, and wakes it automatically. These settings apply
+only to the frontend process, so no shell profile editing is required.
 
 Native application identity is configured once in `build/app.json`. On every
 native add or run, OnRamp synchronizes the human display name, Android
@@ -181,7 +188,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.7
+onramp upgrade --to 0.5.8
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -195,7 +202,7 @@ generated separately for iOS, Android, and web so simultaneous mobile runs do
 not overwrite shared route state.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.7`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.8`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 

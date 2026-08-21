@@ -250,7 +250,13 @@ def test_android_coordinates_backend_and_metro_port(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cli,
         "run_uvicorn_with_watch",
-        lambda port: captured.update(backend_port=port),
+        lambda port, companion_process=None: (
+            captured.update(
+                backend_port=port,
+                backend_companion=companion_process,
+            )
+            or True
+        ),
     )
     cli.spawned_processes.clear()
 
@@ -263,6 +269,7 @@ def test_android_coordinates_backend_and_metro_port(tmp_path, monkeypatch):
     assert captured["metro_port"] == 9090
     assert captured["watch_diagnostics"] is True
     assert captured["backend_port"] == 9000
+    assert captured["backend_companion"] is process
     cli.spawned_processes.clear()
 
 
@@ -285,7 +292,13 @@ def test_mobile_coordinates_both_apps_with_one_backend(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cli,
         "run_uvicorn_with_watch",
-        lambda port: captured.update(backend_port=port),
+        lambda port, companion_process=None: (
+            captured.update(
+                backend_port=port,
+                backend_companion=companion_process,
+            )
+            or True
+        ),
     )
     cli.spawned_processes.clear()
 
@@ -293,8 +306,75 @@ def test_mobile_coordinates_both_apps_with_one_backend(tmp_path, monkeypatch):
     assert captured["platform"] == "mobile"
     assert captured["metro_port"] == 9090
     assert captured["backend_port"] == 9000
+    assert captured["backend_companion"] is process
     assert cli.spawned_processes == [process]
     cli.spawned_processes.clear()
+
+
+def test_backend_watcher_ignores_database_and_directory_changes():
+    assert cli._backend_source_filter(None, "/project/app/api/index.py")
+    assert not cli._backend_source_filter(None, "/project/app")
+    assert not cli._backend_source_filter(None, "/project/app/db/db.sqlite3")
+    assert not cli._backend_source_filter(
+        None,
+        "/project/app/db/db.sqlite3-wal",
+    )
+    assert not cli._backend_source_filter(
+        None,
+        "/project/app/__pycache__/index.pyc",
+    )
+
+
+def test_backend_stops_and_fails_when_frontend_process_fails(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    class FrontendProcess:
+        def __init__(self):
+            self.statuses = iter([None, 70])
+
+        def poll(self):
+            return next(self.statuses)
+
+    class BackendProcess:
+        def __init__(self):
+            self.terminated = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            return 0
+
+    frontend = FrontendProcess()
+    backend = BackendProcess()
+    watch_options = {}
+
+    def fake_watch(*paths, **options):
+        watch_options.update(paths=paths, **options)
+        yield set()
+
+    monkeypatch.setattr(cli, "APP_DIR", str(tmp_path))
+    monkeypatch.setattr(cli, "is_port_in_use", lambda _port: False)
+    monkeypatch.setattr(cli, "_start_uvicorn_worker", lambda *_args: backend)
+    monkeypatch.setattr(cli, "cleanup_processes", lambda: None)
+    monkeypatch.setattr(cli, "watch", fake_watch)
+
+    assert not cli.run_uvicorn_with_watch(
+        8000,
+        companion_process=frontend,
+    )
+    assert backend.terminated
+    assert watch_options["yield_on_timeout"] is True
+    assert watch_options["rust_timeout"] == 500
+    assert watch_options["watch_filter"] is cli._backend_source_filter
+    assert "Frontend command failed with status 70; stopping backend." in (
+        capsys.readouterr().out
+    )
 
 
 def test_main_dispatches_mobile_command(monkeypatch):

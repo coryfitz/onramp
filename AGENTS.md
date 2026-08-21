@@ -9,6 +9,11 @@ OnRamp development spans two independent repositories:
 Always inspect and commit the two Git worktrees separately. A clean parent
 `git status` says nothing about `onramp-js`.
 
+## Release line
+
+- Keep both packages on the `0.5.x` release line. Do not publish `0.6.0` or
+  later unless the user explicitly authorizes that version change.
+
 ## Local versus published behavior
 
 When this Python source checkout contains `onramp-js/bin/onramp-js.js`, the
@@ -62,6 +67,10 @@ change.
 - Native project names are normalized and must remain stable after generation.
 - `onramp mobile` launches iOS and Android with separate Metro servers while
   sharing at most one Python backend process.
+- When a coordinated frontend process exits, stop its backend process and
+  return the frontend's failure instead of leaving a backend-only watcher.
+- Backend development reloads must respond to Python source changes, not
+  SQLite writes, bytecode, static files, or directory metadata.
 - `onramp mobile` completes every interactive native prerequisite check before
   starting either Metro server. Its Metro children must not read terminal input.
 - After those preflights, `onramp mobile` launches Android before iOS and gives
@@ -70,7 +79,10 @@ change.
   exposes enough information and an elapsed activity state otherwise.
 - Android SDK installs must select the native host platform explicitly. On
   macOS, detect a non-native Emulator executable before launch, ask before
-  repairing it, and surface an Emulator's early startup failure diagnostics.
+  repairing it, remove only the incompatible Emulator package before its
+  native reinstall, verify the result, and preserve AVDs and system images.
+- Treat provider URL or checksum mismatch output as a package-install failure
+  even when the provider process exits successfully.
 - An optional native component that its provider rejects must not be presented
   as certainly downloadable or repeatedly offered without changed metadata or
   an explicit retry interval.

@@ -197,8 +197,10 @@ def run_web(with_backend=True, port=8000):
             if not web_process:
                 return False
             spawned_processes.append(web_process)
-            run_uvicorn_with_watch(port)
-            return True
+            return run_uvicorn_with_watch(
+                port,
+                companion_process=web_process,
+            )
         else:
             print("Backend disabled. Running web only...")
             return run_frontend("web", BUILD_DIR, env=env)
@@ -233,8 +235,10 @@ def run_ios(
         if not ios_process:
             return False
         spawned_processes.append(ios_process)
-        run_uvicorn_with_watch(port)
-        return True
+        return run_uvicorn_with_watch(
+            port,
+            companion_process=ios_process,
+        )
     else:
         return run_frontend(
             "ios",
@@ -271,8 +275,10 @@ def run_android(
         if not android_process:
             return False
         spawned_processes.append(android_process)
-        run_uvicorn_with_watch(port)
-        return True
+        return run_uvicorn_with_watch(
+            port,
+            companion_process=android_process,
+        )
 
     return run_frontend(
         "android",
@@ -310,8 +316,10 @@ def run_mobile(
         if not mobile_process:
             return False
         spawned_processes.append(mobile_process)
-        run_uvicorn_with_watch(port)
-        return True
+        return run_uvicorn_with_watch(
+            port,
+            companion_process=mobile_process,
+        )
 
     return run_frontend(
         "mobile",
@@ -343,26 +351,37 @@ def _start_uvicorn_worker(app_dir: str, port: int):
     spawned_processes.append(p)
     return p
 
-def run_uvicorn_with_watch(port=8000):
-    """Watch app/ for changes and restart uvicorn worker (no parent reloader)."""
-    proc = None
-
-    ignore_patterns = [
-        '.sqlite3-shm',
-        '.sqlite3-wal',
-        '.sqlite3-journal',
+def _backend_source_filter(_change, file_path):
+    """Restart the backend only for Python source changes."""
+    path = str(file_path)
+    if any(part in path for part in (
+        '__pycache__',
         '.pyc',
         '.pyo',
-        '__pycache__',
-        '.DS_Store',
-        'Thumbs.db',
-        '.tmp',
-        '.log'
-    ]
+    )):
+        return False
+    return path.endswith('.py')
 
-    def should_ignore_change(file_path):
-        file_path_str = str(file_path)
-        return any(pattern in file_path_str for pattern in ignore_patterns)
+
+def _finished_frontend_result(companion_process):
+    if companion_process is None:
+        return None
+    status = companion_process.poll()
+    if status is None:
+        return None
+    if status == 0:
+        print("Frontend command stopped; stopping backend.")
+        return True
+    print(
+        f"Frontend command failed with status {status}; stopping backend."
+    )
+    return False
+
+
+def run_uvicorn_with_watch(port=8000, companion_process=None):
+    """Watch app/ for changes and restart uvicorn worker (no parent reloader)."""
+    proc = None
+    successful = True
 
     try:
         if is_port_in_use(port):
@@ -373,16 +392,28 @@ def run_uvicorn_with_watch(port=8000):
                 print(f"Using port {port} instead.")
             else:
                 print("User declined to use another port. Exiting.")
-                return
+                return False
+
+        frontend_result = _finished_frontend_result(companion_process)
+        if frontend_result is not None:
+            return frontend_result
 
         print(f"Dev watch active on {APP_DIR}.")
         proc = _start_uvicorn_worker(APP_DIR, port)
 
-        for changes in watch(APP_DIR):
-            filtered_changes = [change for change in changes if not should_ignore_change(change[1])]
-            if not filtered_changes:
+        for changes in watch(
+            APP_DIR,
+            watch_filter=_backend_source_filter,
+            rust_timeout=500 if companion_process is not None else 5000,
+            yield_on_timeout=companion_process is not None,
+        ):
+            frontend_result = _finished_frontend_result(companion_process)
+            if frontend_result is not None:
+                successful = frontend_result
+                break
+            if not changes:
                 continue
-            print(f"Changes detected: {filtered_changes}")
+            print(f"Changes detected: {list(changes)}")
             print("Restarting server...")
             try:
                 if proc and proc.poll() is None:
@@ -400,6 +431,7 @@ def run_uvicorn_with_watch(port=8000):
         print("\nWatcher interrupted.")
     except Exception as e:
         print(f"Watcher error: {e}")
+        successful = False
     finally:
         try:
             if proc and proc.poll() is None:
@@ -411,20 +443,19 @@ def run_uvicorn_with_watch(port=8000):
         except Exception:
             pass
         cleanup_processes()
+    return successful
 
 def run_command_logic(port=8000):
     if not os.path.exists(BUILD_DIR):
         print("No build directory found. Running backend only")
-        run_uvicorn_with_watch(port)
-        return True
+        return run_uvicorn_with_watch(port)
 
     try:
         backend_enabled = getattr(settings, 'BACKEND', True)
         return run_web(with_backend=backend_enabled, port=port)
     except Exception as e:
         print(f"Error checking settings: {e}. Running backend only")
-        run_uvicorn_with_watch(port)
-        return True
+        return run_uvicorn_with_watch(port)
 
 # -----------------------------------------------------------------------------
 # Project scaffolding
