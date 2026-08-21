@@ -149,26 +149,32 @@ MODULE_NAME = FRAMEWORK_NAME.lower()
 # -----------------------------------------------------------------------------
 spawned_processes = []
 
+def _stop_process(process, timeout=3):
+    """Terminate and reap one child process."""
+    try:
+        if process.poll() is not None:
+            return
+        print(f"Terminating process {process.pid}...")
+        process.terminate()
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
 def cleanup_processes():
     """Clean up all spawned processes."""
     global spawned_processes
     for process in spawned_processes:
-        try:
-            if process.poll() is None:
-                print(f"Terminating process {process.pid}...")
-                process.terminate()
-                try:
-                    process.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-        except Exception:
-            pass
+        _stop_process(process)
     spawned_processes.clear()
 
 def signal_handler(signum, frame):
     print("\nReceived interrupt signal. Cleaning up...")
-    cleanup_processes()
-    os._exit(0)
+    raise KeyboardInterrupt
 
 def is_port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -344,10 +350,22 @@ def _uvicorn_cmd(port: int):
     ]
 
 def _start_uvicorn_worker(app_dir: str, port: int):
-    """Start one uvicorn worker and track it."""
+    """Start and track a worker owned by the OnRamp parent process."""
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    p = subprocess.Popen(_uvicorn_cmd(port), env=env, cwd=app_dir)
+    popen_options = {}
+    if os.name == "nt":
+        popen_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        # Keep terminal Ctrl+C with the wrapper. It will explicitly stop this
+        # worker from its guaranteed cleanup path.
+        popen_options["start_new_session"] = True
+    p = subprocess.Popen(
+        _uvicorn_cmd(port),
+        env=env,
+        cwd=app_dir,
+        **popen_options,
+    )
     spawned_processes.append(p)
     return p
 
@@ -416,32 +434,21 @@ def run_uvicorn_with_watch(port=8000, companion_process=None):
             print(f"Changes detected: {list(changes)}")
             print("Restarting server...")
             try:
-                if proc and proc.poll() is None:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
+                if proc:
+                    _stop_process(proc)
             except Exception as e:
                 print(f"Error stopping previous worker: {e}")
 
             proc = _start_uvicorn_worker(APP_DIR, port)
 
     except KeyboardInterrupt:
-        print("\nWatcher interrupted.")
+        raise
     except Exception as e:
         print(f"Watcher error: {e}")
         successful = False
     finally:
-        try:
-            if proc and proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-        except Exception:
-            pass
+        if proc:
+            _stop_process(proc)
         cleanup_processes()
     return successful
 
@@ -780,6 +787,8 @@ def handle_del(args):
 def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, signal_handler)
     atexit.register(cleanup_processes)
 
     original_cwd = os.getcwd()

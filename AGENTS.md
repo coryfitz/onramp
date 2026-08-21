@@ -69,6 +69,9 @@ change.
   sharing at most one Python backend process.
 - When a coordinated frontend process exits, stop its backend process and
   return the frontend's failure instead of leaving a backend-only watcher.
+- Keep the backend worker outside the terminal foreground process group. The
+  Python wrapper owns its shutdown, reaps it on Ctrl+C, and must not bypass
+  `finally` cleanup with a hard process exit.
 - Backend development reloads must respond to Python source changes, not
   SQLite writes, bytecode, static files, or directory metadata.
 - `onramp mobile` completes every interactive native prerequisite check before
@@ -83,6 +86,12 @@ change.
   native reinstall, verify the result, and preserve AVDs and system images.
 - Treat provider URL or checksum mismatch output as a package-install failure
   even when the provider process exits successfully.
+- Create Android AVDs with an explicit modern phone profile. Detect generic
+  low-resolution AVDs, ask before creating a sharper replacement, preserve the
+  old AVD and installed system image, prefer the sharper matching device, and
+  explicitly install and launch the app on that device when others are online.
+- Native navigation to the initial route is a stack reset. Generated Home
+  controls, including error screens, must work without browser globals.
 - An optional native component that its provider rejects must not be presented
   as certainly downloadable or repeatedly offered without changed metadata or
   an explicit retry interval.

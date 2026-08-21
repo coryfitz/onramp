@@ -1,5 +1,12 @@
+import os
 from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
 from types import SimpleNamespace
+
+import pytest
 
 from onramp import cli
 from onramp.db import manager as db_manager_module
@@ -339,6 +346,7 @@ def test_backend_stops_and_fails_when_frontend_process_fails(
 
     class BackendProcess:
         def __init__(self):
+            self.pid = 1234
             self.terminated = False
 
         def poll(self):
@@ -375,6 +383,151 @@ def test_backend_stops_and_fails_when_frontend_process_fails(
     assert "Frontend command failed with status 70; stopping backend." in (
         capsys.readouterr().out
     )
+
+
+def test_uvicorn_worker_isolated_from_terminal_process_group(
+    tmp_path,
+    monkeypatch,
+):
+    captured = {}
+    process = SimpleNamespace(pid=1234)
+
+    def fake_popen(command, **options):
+        captured.update(command=command, **options)
+        return process
+
+    monkeypatch.setattr(cli.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(cli, "_uvicorn_cmd", lambda port: ["uvicorn", str(port)])
+    cli.spawned_processes.clear()
+
+    assert cli._start_uvicorn_worker(str(tmp_path), 8123) is process
+    assert captured["command"] == ["uvicorn", "8123"]
+    assert captured["cwd"] == str(tmp_path)
+    if os.name == "nt":
+        assert captured["creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        assert captured["start_new_session"] is True
+    assert cli.spawned_processes == [process]
+    cli.spawned_processes.clear()
+
+
+def test_stop_process_escalates_and_reaps_after_timeout():
+    calls = []
+
+    class Process:
+        pid = 1234
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            calls.append("terminate")
+
+        def kill(self):
+            calls.append("kill")
+
+        def wait(self, timeout=None):
+            calls.append(("wait", timeout))
+            if calls.count(("wait", timeout)) == 1:
+                raise subprocess.TimeoutExpired("worker", timeout)
+            return -signal.SIGKILL
+
+    cli._stop_process(Process(), timeout=0.01)
+
+    assert calls == [
+        "terminate",
+        ("wait", 0.01),
+        "kill",
+        ("wait", 0.01),
+    ]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX signal lifecycle regression")
+def test_ctrl_c_reaps_frontend_and_isolated_backend(tmp_path):
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    frontend_pid_path = tmp_path / "frontend.pid"
+    backend_pid_path = tmp_path / "backend.pid"
+    source_root = Path(__file__).resolve().parents[1] / "src"
+    child_code = (
+        "import os, pathlib, sys, time; "
+        "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); "
+        "time.sleep(60)"
+    )
+    coordinator_code = f"""
+import signal
+import subprocess
+import sys
+from onramp import cli
+
+cli.APP_DIR = {str(app_dir)!r}
+cli.spawned_processes.clear()
+cli.is_port_in_use = lambda _port: False
+cli._uvicorn_cmd = lambda _port: [
+    sys.executable,
+    "-c",
+    {child_code!r},
+    {str(backend_pid_path)!r},
+]
+signal.signal(signal.SIGINT, cli.signal_handler)
+frontend = subprocess.Popen([
+    sys.executable,
+    "-c",
+    {child_code!r},
+    {str(frontend_pid_path)!r},
+])
+cli.spawned_processes.append(frontend)
+try:
+    cli.run_uvicorn_with_watch(8123, companion_process=frontend)
+except KeyboardInterrupt:
+    raise SystemExit(130)
+"""
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        filter(None, [str(source_root), environment.get("PYTHONPATH")])
+    )
+    coordinator = subprocess.Popen(
+        [sys.executable, "-c", coordinator_code],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+        text=True,
+    )
+    child_pids = []
+
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if frontend_pid_path.is_file() and backend_pid_path.is_file():
+                break
+            if coordinator.poll() is not None:
+                break
+            time.sleep(0.05)
+
+        assert frontend_pid_path.is_file()
+        assert backend_pid_path.is_file()
+        child_pids = [
+            int(frontend_pid_path.read_text()),
+            int(backend_pid_path.read_text()),
+        ]
+
+        os.killpg(coordinator.pid, signal.SIGINT)
+        output, _ = coordinator.communicate(timeout=10)
+
+        assert coordinator.returncode == 130, output
+        for pid in child_pids:
+            with pytest.raises(ProcessLookupError):
+                os.kill(pid, 0)
+    finally:
+        if coordinator.poll() is None:
+            coordinator.kill()
+            coordinator.communicate(timeout=5)
+        for pid in child_pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 def test_main_dispatches_mobile_command(monkeypatch):
