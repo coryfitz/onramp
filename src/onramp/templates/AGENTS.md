@@ -55,6 +55,9 @@ tools working on __ONRAMP_APP_NAME__.
 - Routes come from files under `build/app/`. The deterministic fallback is
   `build/src/generated/routes.ts`; Metro and Webpack use ignored platform
   siblings so concurrent iOS and Android runs cannot overwrite one another.
+- File discovery and matching stay identical across targets. Web route modules
+  may be split dynamically, while native route registries eagerly import them
+  to avoid Metro development-bundle Fast Refresh loops.
 - Metro and Webpack regenerate routes during development. For deterministic
   checks, run `npm run build:routes` in `build/`.
 - Before handoff, run relevant Python tests, frontend tests/type checks, and at

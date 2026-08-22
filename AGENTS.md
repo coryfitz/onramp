@@ -103,6 +103,10 @@ change.
   Refresh on iOS 26 simulator runtimes.
 - Use Metro's native file watcher on macOS. Watchman can surface dependency
   metadata-only events as empty Fast Refresh cycles even when source is idle.
+- Preserve the same file-based route discovery and matching across targets.
+  Web routes may use dynamic imports for code splitting; native route registries
+  must eagerly import their modules so Metro bundle registration cannot create
+  an idle Fast Refresh loop.
 - An optional native component that its provider rejects must not be presented
   as certainly downloadable or repeatedly offered without changed metadata or
   an explicit retry interval.
