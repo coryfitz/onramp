@@ -81,6 +81,12 @@ onramp android
 onramp mobile
 ```
 
+After the first successful native build, OnRamp reopens the installed app
+without recompiling when its native inputs are unchanged. JavaScript and
+TypeScript are still served fresh by Metro. Use `onramp ios --rebuild`,
+`onramp android --rebuild`, or `onramp mobile --rebuild` to force native
+compilation and installation.
+
 `onramp mobile` prepares both native apps and launches Android before iOS so the
 faster emulator is available first. Each platform gets its own project-owned
 Metro server, and a backend-enabled project starts only one Python server for
@@ -112,6 +118,8 @@ Metro server starts. It then opens both emulator applications, keeps terminal
 input in the coordinating OnRamp process, and prefixes concurrent Metro output
 with `[iOS]` and `[Android]`. This prevents one platform's development server
 from hiding or consuming the other platform's installation prompt.
+Full native builds report elapsed activity while Xcode or Gradle is quiet, so
+Xcode's final build-settings and installation work no longer looks stuck.
 
 Native doctor checks validate an installed Watchman binary. Metro uses
 Watchman when it is healthy and explicitly falls back to the native filesystem
@@ -153,9 +161,10 @@ selected emulator even if another device remains online. Provider URL or
 checksum mismatches are failures even when the provider exits with status
 zero. Emulator processes that exit during startup report their own diagnostics
 immediately instead of appearing to hang until the boot timeout. OnRamp selects
-JDK 17, enables macOS clipboard sharing, cold-starts the selected AVD, and wakes
-it automatically. These settings apply only to the frontend process, so no
-shell profile editing is required.
+JDK 17, enables macOS clipboard sharing, cold-starts the selected AVD without
+the boot animation, targets only its active CPU architecture during native
+builds, and wakes it automatically. These settings apply only to the frontend
+process, so no shell profile editing is required.
 
 Native Home navigation resets the route stack to the generated root. Home
 controls on ordinary and not-found screens use the shared navigation layer and
@@ -199,7 +208,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.10
+onramp upgrade --to 0.5.11
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -213,7 +222,7 @@ generated separately for iOS, Android, and web so simultaneous mobile runs do
 not overwrite shared route state.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.10`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.11`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 

@@ -63,6 +63,10 @@ change.
   responds. Select a free port and pass it through to the React Native CLI.
 - `--port` belongs to the Python backend; `--metro-port` belongs to Metro.
 - `--watch-diagnostics` must report exact project-relative native source events.
+- Unchanged native inputs may reuse an app already installed on the same
+  simulator or AVD. Keep that cache project-local and disposable, verify the
+  installed app and target identity before reuse, and retain `--rebuild` as an
+  explicit full-build escape hatch. Application source remains Metro-served.
 - Default iOS repair preserves `Podfile.lock`; only `--fresh` may remove it.
 - Native project names are normalized and must remain stable after generation.
 - `onramp mobile` launches iOS and Android with separate Metro servers while
@@ -80,6 +84,8 @@ change.
   Android the requested Metro port so the faster emulator is available first.
 - Long native component installs must surface byte progress when the provider
   exposes enough information and an elapsed activity state otherwise.
+- Native compilation and installation must surface elapsed activity while
+  Xcode or Gradle is otherwise silent.
 - Android SDK installs must select the native host platform explicitly. On
   macOS, detect a non-native Emulator executable before launch, ask before
   repairing it, remove only the incompatible Emulator package before its

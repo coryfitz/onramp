@@ -97,6 +97,7 @@ def run_frontend(
     env: Mapping[str, str] | None = None,
     metro_port: int | None = None,
     watch_diagnostics: bool = False,
+    rebuild: bool = False,
 ) -> bool:
     """Prepare and run a frontend platform with onramp-js."""
     if platform not in {"web", "ios", "android", "mobile"}:
@@ -110,6 +111,8 @@ def run_frontend(
         arguments.extend(["--metro-port", str(metro_port)])
     if watch_diagnostics:
         arguments.append("--watch-diagnostics")
+    if rebuild:
+        arguments.append("--rebuild")
 
     return _run_frontend_command(
         arguments,
@@ -126,6 +129,7 @@ def start_frontend(
     env: Mapping[str, str] | None = None,
     metro_port: int | None = None,
     watch_diagnostics: bool = False,
+    rebuild: bool = False,
 ) -> subprocess.Popen | None:
     """Start an onramp-js platform command without blocking Python."""
     if platform not in {"web", "ios", "android", "mobile"}:
@@ -139,6 +143,8 @@ def start_frontend(
         arguments.extend(["--metro-port", str(metro_port)])
     if watch_diagnostics:
         arguments.append("--watch-diagnostics")
+    if rebuild:
+        arguments.append("--rebuild")
 
     try:
         return subprocess.Popen(

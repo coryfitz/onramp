@@ -309,9 +309,10 @@ def test_mobile_coordinates_both_apps_with_one_backend(tmp_path, monkeypatch):
     )
     cli.spawned_processes.clear()
 
-    assert cli.run_mobile(port=9000, metro_port=9090)
+    assert cli.run_mobile(port=9000, metro_port=9090, rebuild=True)
     assert captured["platform"] == "mobile"
     assert captured["metro_port"] == 9090
+    assert captured["rebuild"] is True
     assert captured["backend_port"] == 9000
     assert captured["backend_companion"] is process
     assert cli.spawned_processes == [process]
@@ -533,11 +534,17 @@ except KeyboardInterrupt:
 def test_main_dispatches_mobile_command(monkeypatch):
     captured = {}
 
-    def fake_mobile(port, metro_port=None, watch_diagnostics=False):
+    def fake_mobile(
+        port,
+        metro_port=None,
+        watch_diagnostics=False,
+        rebuild=False,
+    ):
         captured.update(
             port=port,
             metro_port=metro_port,
             watch_diagnostics=watch_diagnostics,
+            rebuild=rebuild,
         )
         return True
 
@@ -553,6 +560,7 @@ def test_main_dispatches_mobile_command(monkeypatch):
             "--metro-port",
             "9090",
             "--watch-diagnostics",
+            "--rebuild",
         ],
     )
 
@@ -561,6 +569,7 @@ def test_main_dispatches_mobile_command(monkeypatch):
         "port": 9000,
         "metro_port": 9090,
         "watch_diagnostics": True,
+        "rebuild": True,
     }
 
 

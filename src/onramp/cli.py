@@ -219,6 +219,7 @@ def run_ios(
     port: int = 8000,
     metro_port: int | None = None,
     watch_diagnostics: bool = False,
+    rebuild: bool = False,
 ):
     """Run iOS simulator; if BACKEND=True also start the backend dev server."""
     if not os.path.exists(BUILD_DIR):
@@ -237,6 +238,7 @@ def run_ios(
             env=env,
             metro_port=metro_port,
             watch_diagnostics=watch_diagnostics,
+            rebuild=rebuild,
         )
         if not ios_process:
             return False
@@ -253,6 +255,7 @@ def run_ios(
             env=env,
             metro_port=metro_port,
             watch_diagnostics=watch_diagnostics,
+            rebuild=rebuild,
         )
 
 
@@ -260,6 +263,7 @@ def run_android(
     port: int = 8000,
     metro_port: int | None = None,
     watch_diagnostics: bool = False,
+    rebuild: bool = False,
 ):
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
@@ -277,6 +281,7 @@ def run_android(
             env=env,
             metro_port=metro_port,
             watch_diagnostics=watch_diagnostics,
+            rebuild=rebuild,
         )
         if not android_process:
             return False
@@ -293,6 +298,7 @@ def run_android(
         env=env,
         metro_port=metro_port,
         watch_diagnostics=watch_diagnostics,
+        rebuild=rebuild,
     )
 
 
@@ -300,6 +306,7 @@ def run_mobile(
     port: int = 8000,
     metro_port: int | None = None,
     watch_diagnostics: bool = False,
+    rebuild: bool = False,
 ):
     """Run the iOS and Android apps with one shared backend process."""
     if not os.path.exists(BUILD_DIR):
@@ -318,6 +325,7 @@ def run_mobile(
             env=env,
             metro_port=metro_port,
             watch_diagnostics=watch_diagnostics,
+            rebuild=rebuild,
         )
         if not mobile_process:
             return False
@@ -334,6 +342,7 @@ def run_mobile(
         env=env,
         metro_port=metro_port,
         watch_diagnostics=watch_diagnostics,
+        rebuild=rebuild,
     )
 
 
@@ -800,9 +809,9 @@ def main():
   {FRAMEWORK_NAME.lower()} new <name> [--api | --mobile | --all]
   {FRAMEWORK_NAME.lower()} run [--port 8000]
   {FRAMEWORK_NAME.lower()} web
-  {FRAMEWORK_NAME.lower()} ios [--port 8000] [--metro-port 8081] [--watch-diagnostics]
-  {FRAMEWORK_NAME.lower()} android [--port 8000] [--metro-port 8081] [--watch-diagnostics]
-  {FRAMEWORK_NAME.lower()} mobile [--port 8000] [--metro-port 8081] [--watch-diagnostics]
+  {FRAMEWORK_NAME.lower()} ios [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild]
+  {FRAMEWORK_NAME.lower()} android [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild]
+  {FRAMEWORK_NAME.lower()} mobile [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild]
   {FRAMEWORK_NAME.lower()} doctor [web|ios|android|mobile|all]
   {FRAMEWORK_NAME.lower()} repair:ios [--fresh]
   {FRAMEWORK_NAME.lower()} upgrade [--check] [--to VERSION]
@@ -812,7 +821,8 @@ def main():
 
 The --port option controls the Python backend. --metro-port controls the
 React Native bundler. --watch-diagnostics prints source paths that trigger
-Fast Refresh. repair:ios preserves Podfile.lock unless --fresh is set.
+Fast Refresh. --rebuild forces native apps to rebuild and reinstall.
+repair:ios preserves Podfile.lock unless --fresh is set.
 upgrade creates recoverable backups and never overwrites modified managed files.
 """,
         )
@@ -829,6 +839,11 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             "--watch-diagnostics",
             action="store_true",
             help="Log source paths that can trigger native Fast Refresh",
+        )
+        parser.add_argument(
+            "--rebuild",
+            action="store_true",
+            help="Force native apps to rebuild and reinstall",
         )
         parser.add_argument(
             "--fresh",
@@ -901,6 +916,7 @@ upgrade creates recoverable backups and never overwrites modified managed files.
                 args.port,
                 metro_port=args.metro_port,
                 watch_diagnostics=args.watch_diagnostics,
+                rebuild=args.rebuild,
             ) else 1
 
         elif args.command == "android":
@@ -908,6 +924,7 @@ upgrade creates recoverable backups and never overwrites modified managed files.
                 args.port,
                 metro_port=args.metro_port,
                 watch_diagnostics=args.watch_diagnostics,
+                rebuild=args.rebuild,
             ) else 1
 
         elif args.command == "mobile":
@@ -915,6 +932,7 @@ upgrade creates recoverable backups and never overwrites modified managed files.
                 args.port,
                 metro_port=args.metro_port,
                 watch_diagnostics=args.watch_diagnostics,
+                rebuild=args.rebuild,
             ) else 1
 
         elif args.command == "web":

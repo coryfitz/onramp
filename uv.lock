@@ -242,7 +242,7 @@ wheels = [
 
 [[package]]
 name = "onramp"
-version = "0.5.10"
+version = "0.5.11"
 source = { editable = "." }
 dependencies = [
     { name = "aerich" },

@@ -66,6 +66,19 @@ def test_run_frontend_forwards_watch_diagnostics(tmp_path, monkeypatch):
     assert captured["command"][-1] == "--watch-diagnostics"
 
 
+def test_run_frontend_forwards_rebuild(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run(command, cwd, env, action):
+        captured.update(command=command, cwd=cwd, env=env, action=action)
+        return True
+
+    monkeypatch.setattr(frontend, "_run_frontend_command", fake_run)
+
+    assert frontend.run_frontend("android", tmp_path, rebuild=True)
+    assert captured["command"][-1] == "--rebuild"
+
+
 def test_mobile_is_forwarded_through_the_python_bridge(tmp_path, monkeypatch):
     captured = {}
 
