@@ -101,8 +101,9 @@ change.
 - Bind iOS simulators to Metro through numeric IPv4 loopback. Avoid
   `localhost`, whose dual-stack resolution can repeatedly disconnect Fast
   Refresh on iOS 26 simulator runtimes.
-- Use Metro's native file watcher on macOS. Watchman can surface dependency
-  metadata-only events as empty Fast Refresh cycles even when source is idle.
+- Use Metro's native file watcher on macOS. Suppress only HMR cycles whose
+  calculated delta has no added, modified, or deleted modules; metadata-only
+  dependency events must not show a refresh banner, while real edits must pass.
 - Preserve the same file-based route discovery and matching across targets.
   Web routes may use dynamic imports for code splitting; native route registries
   must eagerly import their modules so Metro bundle registration cannot create

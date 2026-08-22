@@ -121,11 +121,15 @@ from hiding or consuming the other platform's installation prompt.
 Full native builds report elapsed activity while Xcode or Gradle is quiet, so
 Xcode's final build-settings and installation work no longer looks stuck.
 
-Native doctor checks validate an installed Watchman binary. Metro uses
-Watchman when it is healthy and explicitly falls back to the native filesystem
-watcher when Watchman is missing or broken. If Fast Refresh repeats
-unexpectedly, run `onramp ios --watch-diagnostics`; OnRamp will print each
-relevant source event with its exact project-relative path.
+Native doctor checks validate an installed Watchman binary. On macOS, Metro
+uses its native filesystem watcher; on other hosts it uses a healthy Watchman
+installation and explicitly falls back when Watchman is missing or broken.
+Cloud sync and indexing can still emit dependency metadata events without
+changing module contents, so OnRamp suppresses only HMR cycles whose calculated
+delta has no added, modified, or deleted modules. Real source edits continue to
+use Fast Refresh normally. If refresh behavior remains unexpected, run
+`onramp ios --watch-diagnostics`; OnRamp will print each relevant source event
+with its exact project-relative path.
 
 On macOS, `onramp ios` delegates the frontend launch to `onramp-js`. It
 adds the iOS project if it is missing, checks Xcode and CocoaPods, installs
@@ -208,7 +212,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.12
+onramp upgrade --to 0.5.13
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -225,7 +229,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.12`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.13`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 
