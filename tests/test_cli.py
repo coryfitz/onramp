@@ -32,6 +32,33 @@ def test_find_next_available_port(monkeypatch):
     assert cli.find_next_available_port(8000) == 8002
 
 
+def test_api_browser_waits_for_backend_and_opens_default_route(monkeypatch):
+    opened = []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(
+        cli.socket,
+        "create_connection",
+        lambda address, timeout: Connection(),
+    )
+    monkeypatch.setattr(cli, "_open_api_url", opened.append)
+
+    cli._open_api_when_ready(
+        8123,
+        SimpleNamespace(poll=lambda: None),
+        timeout=0.1,
+    )
+
+    assert cli._api_url(8123) == "http://127.0.0.1:8123/api"
+    assert opened == [8123]
+
+
 def test_enable_backend_updates_setting_and_preserves_the_file(
     tmp_path,
     monkeypatch,
@@ -279,6 +306,61 @@ def test_main_returns_failure_when_new_project_fails(monkeypatch):
     assert cli.main() == 1
 
 
+@pytest.mark.parametrize(
+    ("runner", "platform"),
+    [
+        (lambda: cli.run_web(port=9000), "web"),
+        (lambda: cli.run_ios(port=9000), "ios"),
+        (lambda: cli.run_android(port=9000), "android"),
+        (lambda: cli.run_mobile(port=9000), "mobile"),
+    ],
+)
+def test_frontend_with_backend_requests_api_browser(
+    tmp_path,
+    monkeypatch,
+    runner,
+    platform,
+):
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    process = SimpleNamespace(poll=lambda: None)
+    captured = {}
+
+    monkeypatch.setattr(cli, "BUILD_DIR", str(build_dir))
+    monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setattr(cli, "settings", SimpleNamespace(BACKEND=True))
+    monkeypatch.setattr(cli, "ensure_node_env", lambda: {"PATH": "test"})
+    monkeypatch.setattr(
+        cli,
+        "start_frontend",
+        lambda selected, *_args, **_kwargs: (
+            captured.update(platform=selected) or process
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_uvicorn_with_watch",
+        lambda port, companion_process=None, open_browser=False: (
+            captured.update(
+                port=port,
+                companion=companion_process,
+                open_browser=open_browser,
+            )
+            or True
+        ),
+    )
+    cli.spawned_processes.clear()
+
+    assert runner()
+    assert captured == {
+        "platform": platform,
+        "port": 9000,
+        "companion": process,
+        "open_browser": True,
+    }
+    cli.spawned_processes.clear()
+
+
 def test_android_coordinates_backend_and_metro_port(tmp_path, monkeypatch):
     build_dir = tmp_path / "build"
     build_dir.mkdir()
@@ -298,10 +380,11 @@ def test_android_coordinates_backend_and_metro_port(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cli,
         "run_uvicorn_with_watch",
-        lambda port, companion_process=None: (
+        lambda port, companion_process=None, open_browser=False: (
             captured.update(
                 backend_port=port,
                 backend_companion=companion_process,
+                backend_opens_browser=open_browser,
             )
             or True
         ),
@@ -318,6 +401,7 @@ def test_android_coordinates_backend_and_metro_port(tmp_path, monkeypatch):
     assert captured["watch_diagnostics"] is True
     assert captured["backend_port"] == 9000
     assert captured["backend_companion"] is process
+    assert captured["backend_opens_browser"] is True
     cli.spawned_processes.clear()
 
 
@@ -340,10 +424,11 @@ def test_mobile_coordinates_both_apps_with_one_backend(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cli,
         "run_uvicorn_with_watch",
-        lambda port, companion_process=None: (
+        lambda port, companion_process=None, open_browser=False: (
             captured.update(
                 backend_port=port,
                 backend_companion=companion_process,
+                backend_opens_browser=open_browser,
             )
             or True
         ),
@@ -356,6 +441,7 @@ def test_mobile_coordinates_both_apps_with_one_backend(tmp_path, monkeypatch):
     assert captured["rebuild"] is True
     assert captured["backend_port"] == 9000
     assert captured["backend_companion"] is process
+    assert captured["backend_opens_browser"] is True
     assert cli.spawned_processes == [process]
     cli.spawned_processes.clear()
 
@@ -372,6 +458,61 @@ def test_backend_watcher_ignores_database_and_directory_changes():
         None,
         "/project/app/__pycache__/index.pyc",
     )
+
+
+def test_backend_watcher_opens_api_on_selected_fallback_port(
+    tmp_path,
+    monkeypatch,
+):
+    class FrontendProcess:
+        def __init__(self):
+            self.statuses = iter([None, 0])
+
+        def poll(self):
+            return next(self.statuses)
+
+    class BackendProcess:
+        pid = 1234
+
+        def __init__(self):
+            self.terminated = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            return 0
+
+    frontend = FrontendProcess()
+    backend = BackendProcess()
+    scheduled = []
+
+    def fake_watch(*_paths, **_options):
+        yield set()
+
+    monkeypatch.setattr(cli, "APP_DIR", str(tmp_path))
+    monkeypatch.setattr(cli, "is_port_in_use", lambda port: port == 8000)
+    monkeypatch.setattr(cli, "find_next_available_port", lambda _port: 8123)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "y")
+    monkeypatch.setattr(cli, "_start_uvicorn_worker", lambda *_args: backend)
+    monkeypatch.setattr(
+        cli,
+        "_schedule_api_browser",
+        lambda port, process: scheduled.append((port, process)),
+    )
+    monkeypatch.setattr(cli, "cleanup_processes", lambda: None)
+    monkeypatch.setattr(cli, "watch", fake_watch)
+
+    assert cli.run_uvicorn_with_watch(
+        8000,
+        companion_process=frontend,
+        open_browser=True,
+    )
+    assert scheduled == [(8123, backend)]
+    assert backend.terminated
 
 
 def test_backend_stops_and_fails_when_frontend_process_fails(

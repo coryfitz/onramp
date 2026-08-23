@@ -14,6 +14,9 @@ import platform
 import signal
 import atexit
 import tempfile
+import threading
+import time
+import webbrowser
 from watchfiles import watch
 from .db.migrations import create_migration, migrate, init_migrations
 from .frontend import (
@@ -251,6 +254,7 @@ def run_web(with_backend=True, port=8000):
             return run_uvicorn_with_watch(
                 port,
                 companion_process=web_process,
+                open_browser=True,
             )
         else:
             print("Backend disabled. Running web only...")
@@ -291,6 +295,7 @@ def run_ios(
         return run_uvicorn_with_watch(
             port,
             companion_process=ios_process,
+            open_browser=True,
         )
     else:
         return run_frontend(
@@ -334,6 +339,7 @@ def run_android(
         return run_uvicorn_with_watch(
             port,
             companion_process=android_process,
+            open_browser=True,
         )
 
     return run_frontend(
@@ -378,6 +384,7 @@ def run_mobile(
         return run_uvicorn_with_watch(
             port,
             companion_process=mobile_process,
+            open_browser=True,
         )
 
     return run_frontend(
@@ -435,6 +442,51 @@ def _backend_source_filter(_change, file_path):
     return path.endswith('.py')
 
 
+def _api_url(port: int) -> str:
+    return f"http://127.0.0.1:{port}/api"
+
+
+def _open_api_url(port: int):
+    """Open the default API route in the system browser."""
+    url = _api_url(port)
+    print(f"Opening API in browser: {url}")
+    try:
+        if webbrowser.open(url, new=2):
+            return True
+    except (OSError, webbrowser.Error) as error:
+        print(f"Could not open the browser: {error}")
+        return False
+    print(f"Could not open the browser automatically. API: {url}")
+    return False
+
+
+def _open_api_when_ready(port: int, process, timeout: float = 30):
+    """Wait for Uvicorn to listen, then open its API without blocking launch."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            return
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                _open_api_url(port)
+                return
+        except OSError:
+            time.sleep(0.05)
+
+    print(f"API did not become ready for browser launch: {_api_url(port)}")
+
+
+def _schedule_api_browser(port: int, process):
+    browser_thread = threading.Thread(
+        target=_open_api_when_ready,
+        args=(port, process),
+        daemon=True,
+        name="onramp-api-browser",
+    )
+    browser_thread.start()
+    return browser_thread
+
+
 def _finished_frontend_result(companion_process):
     if companion_process is None:
         return None
@@ -450,7 +502,11 @@ def _finished_frontend_result(companion_process):
     return False
 
 
-def run_uvicorn_with_watch(port=8000, companion_process=None):
+def run_uvicorn_with_watch(
+    port=8000,
+    companion_process=None,
+    open_browser=False,
+):
     """Watch app/ for changes and restart uvicorn worker (no parent reloader)."""
     proc = None
     successful = True
@@ -472,6 +528,8 @@ def run_uvicorn_with_watch(port=8000, companion_process=None):
 
         print(f"Dev watch active on {APP_DIR}.")
         proc = _start_uvicorn_worker(APP_DIR, port)
+        if open_browser:
+            _schedule_api_browser(port, proc)
 
         for changes in watch(
             APP_DIR,

@@ -66,6 +66,10 @@ If you have only created an API (there is no frontend build folder) then onramp 
 
 If you created a fullstack app, then onramp run will start the dev server for the frontend app and will also start the dev server for the backend app if in your settings you have BACKEND = True.
 
+Whenever a web, iOS, Android, or combined mobile frontend starts with the
+backend enabled, OnRamp opens the default API route at
+`http://127.0.0.1:<port>/api` after the backend is ready.
+
 Enable the backend for a generated project:
 
 ```
@@ -219,7 +223,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.14
+onramp upgrade --to 0.5.15
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -236,7 +240,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.14`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.15`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 

@@ -21,6 +21,8 @@ tools working on __ONRAMP_APP_NAME__.
 - Create projects from their parent directory. The destination may be missing,
   empty, or contain only an initialized `.git` entry.
 - `onramp run` starts web development and starts Python only when `BACKEND=True`.
+- Frontend commands with the backend enabled open the ready API route in the
+  system browser.
 - `onramp ios` and `onramp android` add missing native projects, install native
   dependencies, choose a device, build, and launch.
 - `onramp mobile` launches both native apps with separate Metro servers and at

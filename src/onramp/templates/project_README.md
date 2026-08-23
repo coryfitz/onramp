@@ -31,7 +31,8 @@ onramp doctor ios
 `BACKEND` in `app/settings.py` controls whether frontend commands also start
 the Python server. The generated default is `False`; the backend scaffold is
 still present and can be enabled later by running `onramp backend` from the
-project root.
+project root. When a frontend starts with the backend enabled, OnRamp opens
+`http://127.0.0.1:<port>/api` in the system browser after the API is ready.
 
 Database connections use Starlette lifespan startup and shutdown. During local
 development, `ENVIRONMENT="development"` and `AUTO_GENERATE_SCHEMAS=True` can
