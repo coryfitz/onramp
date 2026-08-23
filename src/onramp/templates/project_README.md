@@ -30,7 +30,8 @@ onramp doctor ios
 
 `BACKEND` in `app/settings.py` controls whether frontend commands also start
 the Python server. The generated default is `False`; the backend scaffold is
-still present and can be enabled later.
+still present and can be enabled later by running `onramp backend` from the
+project root.
 
 Database connections use Starlette lifespan startup and shutdown. During local
 development, `ENVIRONMENT="development"` and `AUTO_GENERATE_SCHEMAS=True` can

@@ -32,6 +32,47 @@ def test_find_next_available_port(monkeypatch):
     assert cli.find_next_available_port(8000) == 8002
 
 
+def test_enable_backend_updates_setting_and_preserves_the_file(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    settings_path = tmp_path / "app" / "settings.py"
+    settings_path.parent.mkdir()
+    settings_path.write_text(
+        "from pathlib import Path\n\n"
+        "BACKEND: bool = False  # Start only when enabled\n\n"
+        "DATABASE = {'engine': 'sqlite'}\n"
+    )
+    monkeypatch.setattr(cli, "SETTINGS_PATH", str(settings_path))
+
+    assert cli.enable_backend()
+    assert settings_path.read_text() == (
+        "from pathlib import Path\n\n"
+        "BACKEND: bool = True  # Start only when enabled\n\n"
+        "DATABASE = {'engine': 'sqlite'}\n"
+    )
+    assert "Backend enabled" in capsys.readouterr().out
+
+
+def test_enable_backend_is_idempotent(tmp_path, monkeypatch, capsys):
+    settings_path = tmp_path / "app" / "settings.py"
+    settings_path.parent.mkdir()
+    settings_path.write_text("BACKEND = True\n")
+    monkeypatch.setattr(cli, "SETTINGS_PATH", str(settings_path))
+
+    assert cli.enable_backend()
+    assert settings_path.read_text() == "BACKEND = True\n"
+    assert "already enabled" in capsys.readouterr().out
+
+
+def test_enable_backend_requires_project_settings(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "SETTINGS_PATH", str(tmp_path / "app" / "settings.py"))
+
+    assert not cli.enable_backend()
+    assert "project root" in capsys.readouterr().out
+
+
 def test_project_files_have_real_metadata_and_ignore_native_outputs(tmp_path):
     cli.write_project_files(str(tmp_path), "My Great App")
 
@@ -571,6 +612,15 @@ def test_main_dispatches_mobile_command(monkeypatch):
         "watch_diagnostics": True,
         "rebuild": True,
     }
+
+
+def test_main_dispatches_backend_command(monkeypatch):
+    called = []
+    monkeypatch.setattr(cli, "enable_backend", lambda: called.append(True) or True)
+    monkeypatch.setattr(cli.sys, "argv", ["onramp", "backend"])
+
+    assert cli.main() == 0
+    assert called == [True]
 
 
 def test_generated_aerich_config_is_portable(tmp_path):

@@ -23,7 +23,7 @@ from .frontend import (
     run_frontend,
     start_frontend,
 )
-from .project import package_version, write_project_manifest
+from .project import atomic_write, package_version, write_project_manifest
 from .upgrade import upgrade_to_version
 from types import SimpleNamespace
 import re
@@ -111,6 +111,51 @@ def load_settings():
         return SimpleNamespace(BACKEND=True)
 
 settings = load_settings()
+
+_BACKEND_SETTING = re.compile(
+    r"^(?P<prefix>[ \t]*BACKEND(?:[ \t]*:[^=\r\n]+)?[ \t]*=[ \t]*)"
+    r"(?P<value>True|False)(?P<suffix>[ \t]*(?:#[^\r\n]*)?)(?=\r?$)",
+    re.MULTILINE,
+)
+
+
+def enable_backend():
+    """Set the current project's BACKEND setting to True."""
+    if not os.path.isfile(SETTINGS_PATH):
+        print(
+            "app/settings.py not found. Run 'onramp backend' from an "
+            "OnRamp project root."
+        )
+        return False
+
+    try:
+        with open(SETTINGS_PATH, encoding="utf-8", newline="") as settings_file:
+            content = settings_file.read()
+    except (OSError, UnicodeError) as error:
+        print(f"Could not read app/settings.py: {error}")
+        return False
+
+    match = _BACKEND_SETTING.search(content)
+    if not match:
+        print(
+            "A top-level BACKEND = True or BACKEND = False setting was not "
+            "found in app/settings.py."
+        )
+        return False
+
+    if match.group("value") == "True":
+        print("Backend is already enabled (BACKEND = True).")
+        return True
+
+    updated = content[:match.start("value")] + "True" + content[match.end("value"):]
+    try:
+        atomic_write(SETTINGS_PATH, updated)
+    except OSError as error:
+        print(f"Could not update app/settings.py: {error}")
+        return False
+
+    print("Backend enabled (BACKEND = True).")
+    return True
 
 def handle_prepmigrations(args):
     """Handle the prepmigrations command"""
@@ -807,6 +852,7 @@ def main():
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog=f"""Commands:
   {FRAMEWORK_NAME.lower()} new <name> [--api | --mobile | --all]
+  {FRAMEWORK_NAME.lower()} backend
   {FRAMEWORK_NAME.lower()} run [--port 8000]
   {FRAMEWORK_NAME.lower()} web
   {FRAMEWORK_NAME.lower()} ios [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild]
@@ -904,6 +950,9 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             else:
                 print(f"Please provide a name for the new app. Usage: '{FRAMEWORK_NAME.lower()} new <name>'")
                 return 2
+
+        elif args.command == "backend":
+            return 0 if enable_backend() else 1
 
         elif args.command == "run":
             if args.web_only:
