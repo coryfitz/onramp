@@ -93,6 +93,38 @@ def test_enable_backend_is_idempotent(tmp_path, monkeypatch, capsys):
     assert "already enabled" in capsys.readouterr().out
 
 
+def test_disable_backend_updates_setting_and_preserves_the_file(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    settings_path = tmp_path / "app" / "settings.py"
+    settings_path.parent.mkdir()
+    settings_path.write_text(
+        "BACKEND: bool = True  # Start only when enabled\n"
+        "DATABASE = {'engine': 'sqlite'}\n"
+    )
+    monkeypatch.setattr(cli, "SETTINGS_PATH", str(settings_path))
+
+    assert cli.disable_backend()
+    assert settings_path.read_text() == (
+        "BACKEND: bool = False  # Start only when enabled\n"
+        "DATABASE = {'engine': 'sqlite'}\n"
+    )
+    assert "Backend disabled" in capsys.readouterr().out
+
+
+def test_disable_backend_is_idempotent(tmp_path, monkeypatch, capsys):
+    settings_path = tmp_path / "app" / "settings.py"
+    settings_path.parent.mkdir()
+    settings_path.write_text("BACKEND = False\n")
+    monkeypatch.setattr(cli, "SETTINGS_PATH", str(settings_path))
+
+    assert cli.disable_backend()
+    assert settings_path.read_text() == "BACKEND = False\n"
+    assert "already disabled" in capsys.readouterr().out
+
+
 def test_enable_backend_requires_project_settings(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "SETTINGS_PATH", str(tmp_path / "app" / "settings.py"))
 
@@ -762,6 +794,22 @@ def test_main_dispatches_backend_command(monkeypatch):
 
     assert cli.main() == 0
     assert called == [True]
+
+
+def test_main_dispatches_backend_off_command(monkeypatch):
+    called = []
+    monkeypatch.setattr(cli, "disable_backend", lambda: called.append(True) or True)
+    monkeypatch.setattr(cli.sys, "argv", ["onramp", "backend", "off"])
+
+    assert cli.main() == 0
+    assert called == [True]
+
+
+def test_main_rejects_unknown_backend_option(monkeypatch, capsys):
+    monkeypatch.setattr(cli.sys, "argv", ["onramp", "backend", "maybe"])
+
+    assert cli.main() == 2
+    assert "Usage: 'onramp backend [off]'" in capsys.readouterr().out
 
 
 def test_generated_aerich_config_is_portable(tmp_path):

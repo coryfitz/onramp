@@ -122,12 +122,12 @@ _BACKEND_SETTING = re.compile(
 )
 
 
-def enable_backend():
-    """Set the current project's BACKEND setting to True."""
+def set_backend_enabled(enabled: bool):
+    """Set the current project's BACKEND setting."""
     if not os.path.isfile(SETTINGS_PATH):
         print(
-            "app/settings.py not found. Run 'onramp backend' from an "
-            "OnRamp project root."
+            "app/settings.py not found. Run this command from an OnRamp "
+            "project root."
         )
         return False
 
@@ -146,19 +146,36 @@ def enable_backend():
         )
         return False
 
-    if match.group("value") == "True":
-        print("Backend is already enabled (BACKEND = True).")
+    target_value = "True" if enabled else "False"
+    state = "enabled" if enabled else "disabled"
+    if match.group("value") == target_value:
+        print(f"Backend is already {state} (BACKEND = {target_value}).")
         return True
 
-    updated = content[:match.start("value")] + "True" + content[match.end("value"):]
+    updated = (
+        content[:match.start("value")]
+        + target_value
+        + content[match.end("value"):]
+    )
     try:
         atomic_write(SETTINGS_PATH, updated)
     except OSError as error:
         print(f"Could not update app/settings.py: {error}")
         return False
 
-    print("Backend enabled (BACKEND = True).")
+    print(f"Backend {state} (BACKEND = {target_value}).")
     return True
+
+
+def enable_backend():
+    """Set the current project's BACKEND setting to True."""
+    return set_backend_enabled(True)
+
+
+def disable_backend():
+    """Set the current project's BACKEND setting to False."""
+    return set_backend_enabled(False)
+
 
 def handle_prepmigrations(args):
     """Handle the prepmigrations command"""
@@ -910,7 +927,7 @@ def main():
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog=f"""Commands:
   {FRAMEWORK_NAME.lower()} new <name> [--api | --mobile | --all]
-  {FRAMEWORK_NAME.lower()} backend
+  {FRAMEWORK_NAME.lower()} backend [off]
   {FRAMEWORK_NAME.lower()} run [--port 8000]
   {FRAMEWORK_NAME.lower()} web
   {FRAMEWORK_NAME.lower()} ios [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild]
@@ -1010,7 +1027,15 @@ upgrade creates recoverable backups and never overwrites modified managed files.
                 return 2
 
         elif args.command == "backend":
-            return 0 if enable_backend() else 1
+            if args.name is None:
+                return 0 if enable_backend() else 1
+            if args.name == "off":
+                return 0 if disable_backend() else 1
+            print(
+                f"Invalid backend option: {args.name}. Usage: "
+                f"'{FRAMEWORK_NAME.lower()} backend [off]'"
+            )
+            return 2
 
         elif args.command == "run":
             if args.web_only:

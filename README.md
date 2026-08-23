@@ -20,7 +20,8 @@ Generated full-stack projects have two source areas:
 Native projects under `build/ios/` and `build/android/` are added lazily.
 `BACKEND=False` disables launching Python alongside the frontend but preserves
 the backend scaffold for later use. From the generated project root, run
-`onramp backend` to change that setting to `BACKEND=True`.
+`onramp backend` to change that setting to `BACKEND=True`, or run
+`onramp backend off` to change it back to `BACKEND=False`.
 
 ## Create an app
 
@@ -74,6 +75,12 @@ Enable the backend for a generated project:
 
 ```
 onramp backend
+```
+
+Disable it again without removing the backend scaffold:
+
+```
+onramp backend off
 ```
 
 OnRamp manages database startup and shutdown through Starlette's lifespan API.
@@ -223,7 +230,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.15
+onramp upgrade --to 0.5.16
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -240,7 +247,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.15`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.16`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 
