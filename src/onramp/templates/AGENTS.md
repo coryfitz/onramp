@@ -23,7 +23,8 @@ tools working on __ONRAMP_APP_NAME__.
   empty, or contain only an initialized `.git` entry.
 - `onramp run` starts web development and starts Python only when `BACKEND=True`.
 - Frontend commands with the backend enabled open the ready API route in the
-  system browser.
+  system browser. HTML browser visits to `/api` show OnRamp's interactive API
+  explorer; programmatic requests still reach `app/api/index.py`.
 - `onramp ios` and `onramp android` add missing native projects, install native
   dependencies, choose a device, build, and launch.
 - `onramp mobile` launches both native apps with separate Metro servers and at

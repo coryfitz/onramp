@@ -10,7 +10,7 @@ import time
 import tomllib
 from types import SimpleNamespace
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -158,6 +158,7 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
     )
     (app_dir / "api" / "index.py").write_text(
         "def get():\n"
+        "    \"\"\"Check the backend status.\"\"\"\n"
         "    return {'status': 'ok'}\n"
     )
     port = available_port()
@@ -189,6 +190,8 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
     )
 
     response_body = None
+    explorer_body = None
+    openapi_document = None
     output = ""
     try:
         deadline = time.monotonic() + 30
@@ -201,6 +204,20 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
                     break
             except (OSError, URLError):
                 time.sleep(0.1)
+
+        if response_body is not None:
+            explorer_request = Request(
+                f"http://127.0.0.1:{port}/api",
+                headers={"Accept": "text/html"},
+            )
+            with urlopen(explorer_request, timeout=2) as response:
+                assert response.headers.get_content_type() == "text/html"
+                explorer_body = response.read().decode("utf-8")
+            with urlopen(
+                f"http://127.0.0.1:{port}/api/openapi.json",
+                timeout=2,
+            ) as response:
+                openapi_document = json.loads(response.read().decode("utf-8"))
     finally:
         if process.poll() is None:
             process.send_signal(signal.SIGINT)
@@ -215,6 +232,12 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
         pytest.fail(f"Uvicorn did not serve /api:\n{output}")
     assert process.returncode == 0
     assert json.loads(response_body) == {"status": "ok"}
+    assert "Explore your API." in explorer_body
+    assert "OpenAPI JSON" in explorer_body
+    assert openapi_document["openapi"] == "3.1.0"
+    assert openapi_document["paths"]["/api"]["get"]["summary"] == (
+        "Check the backend status."
+    )
     assert "Database initialized:" in output
     assert "Database connections closed" in output
     assert "Application startup complete" in output

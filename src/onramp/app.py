@@ -3,7 +3,7 @@ sys.dont_write_bytecode = True
 
 from starlette.applications import Starlette
 from starlette.routing import Route
-from starlette.responses import JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse
 import os
 import importlib.util
 import inspect
@@ -11,6 +11,7 @@ import asyncio
 from functools import wraps
 from typing import List
 
+from onramp.api_explorer import api_explorer_html, build_openapi_document
 from onramp.db.manager import database_lifespan
 
 
@@ -28,6 +29,7 @@ class OnRamp:
     
     def __init__(self, app_dir=None):
         self.routes: List[Route] = []
+        self.api_operations = []
         # Allow explicit app_dir to be passed, otherwise discover it
         self.app_dir = app_dir or self._find_app_directory()
         
@@ -79,7 +81,11 @@ class OnRamp:
         if self.app_dir not in sys.path:
             sys.path.insert(0, self.app_dir)
         
-        for filename in os.listdir(api_dir):
+        filenames = sorted(
+            os.listdir(api_dir),
+            key=lambda filename: (filename != "index.py", filename),
+        )
+        for filename in filenames:
             if filename.endswith('.py') and not filename.startswith('__'):
                 self._load_route_file(filename, api_dir)
     
@@ -228,6 +234,13 @@ class OnRamp:
                 async def unified_handler(request):
                     method = request.method
                     if method in handlers:
+                        if (
+                            route_path == "/api"
+                            and method == "GET"
+                            and self._wants_api_explorer(request)
+                        ):
+                            return self._api_explorer_response()
+
                         handler = handlers[method]
                         
                         # Prepare parameters
@@ -242,6 +255,16 @@ class OnRamp:
                         )
                 
                 self.routes.append(Route(route_path, unified_handler, methods=supported_methods))
+
+                for method in supported_methods:
+                    self.api_operations.append(
+                        self._describe_operation(
+                            route_path,
+                            method,
+                            module_name,
+                            getattr(module, method.lower()),
+                        )
+                    )
                 
                 # Show which handlers are sync vs async for debugging
                 handler_info = []
@@ -263,12 +286,67 @@ class OnRamp:
             print(f"Error loading route from {filename}: {e}")
             import traceback
             traceback.print_exc()
+
+    def _describe_operation(self, path, method, module_name, handler):
+        """Create API explorer metadata for a discovered route handler."""
+        docstring = inspect.getdoc(handler) or ""
+        route_name = (
+            "API root" if module_name == "index" else self._humanize(module_name)
+        )
+        summary = (
+            docstring.splitlines()[0]
+            if docstring
+            else f"{method.title()} {route_name}"
+        )
+        description = docstring or f"{method} request to {path}."
+        safe_name = "".join(
+            character if character.isalnum() else "_"
+            for character in module_name
+        ).strip("_")
+        return {
+            "path": path,
+            "method": method,
+            "tag": "default" if module_name == "index" else self._humanize(module_name),
+            "summary": summary,
+            "description": description,
+            "operation_id": f"{method.lower()}_{safe_name or 'route'}",
+        }
+
+    @staticmethod
+    def _humanize(value):
+        return value.replace("_", " ").replace("-", " ").strip().title()
+
+    @staticmethod
+    def _wants_api_explorer(request):
+        """Show docs for browser navigation while preserving the root API route."""
+        if request.query_params.get("raw", "").lower() in {"1", "true", "yes"}:
+            return False
+        if request.query_params.get("docs", "").lower() in {"1", "true", "yes"}:
+            return True
+        return "text/html" in request.headers.get("accept", "").lower()
+
+    def _api_explorer_response(self, _request=None):
+        return HTMLResponse(api_explorer_html())
+
+    def _openapi_response(self, _request):
+        return JSONResponse(build_openapi_document(self.api_operations))
     
     def create_app(self):
         """Create the Starlette application"""
         self.discover_file_routes()
+        has_api_get = any(
+            operation["path"] == "/api" and operation["method"] == "GET"
+            for operation in self.api_operations
+        )
+        explorer_routes = [
+            Route("/api/openapi.json", self._openapi_response, methods=["GET"]),
+        ]
+        if not has_api_get:
+            explorer_routes.append(
+                Route("/api", self._api_explorer_response, methods=["GET"])
+            )
         return Starlette(
-            routes=self.routes,
+            routes=[*explorer_routes, *self.routes],
             lifespan=database_lifespan(self.app_dir),
         )
 

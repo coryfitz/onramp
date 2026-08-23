@@ -33,7 +33,11 @@ the Python server. The generated default is `False`; the backend scaffold is
 still present and can be enabled later by running `onramp backend` from the
 project root. Run `onramp backend off` to set it back to `False`. When a
 frontend starts with the backend enabled, OnRamp opens
-`http://127.0.0.1:<port>/api` in the system browser after the API is ready.
+`http://127.0.0.1:<port>/api` in the system browser after the API is ready. That
+page is an interactive explorer for the file-based routes in `app/api/`. Its
+OpenAPI document is at `/api/openapi.json`. API clients still reach the default
+`app/api/index.py` handler at `/api`; use `/api?raw=1` to view its raw response
+in a browser.
 
 Database connections use Starlette lifespan startup and shutdown. During local
 development, `ENVIRONMENT="development"` and `AUTO_GENERATE_SCHEMAS=True` can

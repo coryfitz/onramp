@@ -69,7 +69,12 @@ If you created a fullstack app, then onramp run will start the dev server for th
 
 Whenever a web, iOS, Android, or combined mobile frontend starts with the
 backend enabled, OnRamp opens the default API route at
-`http://127.0.0.1:<port>/api` after the backend is ready.
+`http://127.0.0.1:<port>/api` after the backend is ready. Browser visits show
+the built-in API explorer, where routes can be filtered, expanded, and called
+interactively. The generated OpenAPI document is available at
+`/api/openapi.json`. Programmatic requests to `/api` continue to reach the
+handler in `app/api/index.py`; add `?raw=1` when opening that response in a
+browser.
 
 Enable the backend for a generated project:
 
