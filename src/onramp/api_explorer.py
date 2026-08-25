@@ -103,16 +103,16 @@ _API_EXPLORER_HTML = r"""<!doctype html>
   <title>OnRamp API</title>
   <style>
     :root {
-      --canvas: #f3f5f0;
+      --canvas: #f4f7fc;
       --surface: #ffffff;
       --surface-soft: #f8faf7;
-      --ink: #17241f;
-      --muted: #66736d;
-      --line: #dfe5df;
-      --line-strong: #ccd6cf;
-      --brand: #156b4c;
-      --brand-dark: #0f513b;
-      --brand-soft: #e6f4ed;
+      --ink: #071c47;
+      --muted: #66738a;
+      --line: #dce4f0;
+      --line-strong: #c9d5e7;
+      --brand: #174a96;
+      --brand-dark: #071c47;
+      --brand-soft: #e7effb;
       --blue: #2769d8;
       --blue-soft: #eaf1fd;
       --amber: #a65c09;
@@ -121,8 +121,8 @@ _API_EXPLORER_HTML = r"""<!doctype html>
       --red-soft: #fdecec;
       --purple: #7650b6;
       --purple-soft: #f2ecfb;
-      --shadow: 0 18px 55px rgba(30, 55, 44, 0.08);
-      --shadow-small: 0 7px 24px rgba(30, 55, 44, 0.07);
+      --shadow: 0 18px 55px rgba(7, 28, 71, 0.09);
+      --shadow-small: 0 7px 24px rgba(7, 28, 71, 0.07);
       --radius: 18px;
       font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
@@ -137,8 +137,8 @@ _API_EXPLORER_HTML = r"""<!doctype html>
       position: sticky;
       top: 0;
       z-index: 20;
-      border-bottom: 1px solid rgba(204, 214, 207, 0.82);
-      background: rgba(243, 245, 240, 0.88);
+      border-bottom: 1px solid rgba(201, 213, 231, 0.84);
+      background: rgba(244, 247, 252, 0.9);
       backdrop-filter: blur(18px);
     }
 
@@ -160,14 +160,12 @@ _API_EXPLORER_HTML = r"""<!doctype html>
     .brand-mark {
       width: 34px;
       height: 34px;
-      display: grid;
-      place-items: center;
       border-radius: 11px;
-      color: white;
-      background: var(--brand);
-      box-shadow: 0 8px 20px rgba(21, 107, 76, 0.2);
+      border: 1px solid var(--line);
+      background: white;
+      box-shadow: 0 8px 20px rgba(7, 28, 71, 0.12);
+      object-fit: contain;
     }
-    .brand-mark svg { width: 19px; height: 19px; }
     .brand-copy { display: flex; align-items: baseline; gap: 7px; }
     .brand-name { font-weight: 760; letter-spacing: -0.025em; }
     .brand-label { color: var(--muted); font-size: 13px; }
@@ -271,7 +269,7 @@ _API_EXPLORER_HTML = r"""<!doctype html>
       box-shadow: var(--shadow-small);
       transition: 150ms ease;
     }
-    .search:focus { border-color: var(--brand); box-shadow: 0 0 0 4px rgba(21, 107, 76, 0.1); }
+    .search:focus { border-color: var(--brand); box-shadow: 0 0 0 4px rgba(23, 74, 150, 0.11); }
     .search::placeholder { color: #87928d; }
     .version-pill {
       min-height: 50px;
@@ -306,7 +304,7 @@ _API_EXPLORER_HTML = r"""<!doctype html>
       box-shadow: 0 3px 12px rgba(36, 58, 49, 0.035);
       transition: border-color 150ms ease, box-shadow 150ms ease;
     }
-    .operation.open { border-color: #b9c9c0; box-shadow: var(--shadow); }
+    .operation.open { border-color: #b8c9e3; box-shadow: var(--shadow); }
     .operation-button {
       width: 100%;
       min-height: 74px;
@@ -390,7 +388,7 @@ _API_EXPLORER_HTML = r"""<!doctype html>
       font-size: 13px;
       line-height: 1.55;
     }
-    .input:focus, .textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 4px rgba(21, 107, 76, 0.09); }
+    .input:focus, .textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 4px rgba(23, 74, 150, 0.1); }
     .body-tabs { display: flex; gap: 5px; margin-bottom: 10px; }
     .body-tab {
       padding: 7px 10px;
@@ -472,7 +470,7 @@ _API_EXPLORER_HTML = r"""<!doctype html>
       border: 1px solid #cbd7d0;
       border-radius: 12px;
       color: #dff8eb;
-      background: #16251f;
+      background: #07162e;
       font-family: "SFMono-Regular", Consolas, monospace;
       font-size: 12px;
       line-height: 1.55;
@@ -523,9 +521,7 @@ _API_EXPLORER_HTML = r"""<!doctype html>
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none"><path d="M6 18V8.5C6 7.12 7.12 6 8.5 6H18M10 18V12.5c0-1.38 1.12-2.5 2.5-2.5H18M14 18v-1.5c0-1.38 1.12-2.5 2.5-2.5H18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
+        <img class="brand-mark" src="/api/onramp-logo.png" alt="">
         <div class="brand-copy"><span class="brand-name">OnRamp</span><span class="brand-label">API explorer</span></div>
       </div>
       <a class="spec-link" href="/api/openapi.json" target="_blank" rel="noreferrer">

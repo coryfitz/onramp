@@ -9,6 +9,7 @@ import importlib.util
 import inspect
 import asyncio
 from functools import wraps
+from pathlib import Path
 from typing import List
 
 from onramp.api_explorer import api_explorer_html, build_openapi_document
@@ -330,6 +331,15 @@ class OnRamp:
 
     def _openapi_response(self, _request):
         return JSONResponse(build_openapi_document(self.api_operations))
+
+    def _brand_logo_response(self, _request):
+        from starlette.responses import FileResponse
+
+        return FileResponse(
+            Path(__file__).resolve().parent / "static" / "logo.png",
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
     
     def create_app(self):
         """Create the Starlette application"""
@@ -339,6 +349,7 @@ class OnRamp:
             for operation in self.api_operations
         )
         explorer_routes = [
+            Route("/api/onramp-logo.png", self._brand_logo_response, methods=["GET"]),
             Route("/api/openapi.json", self._openapi_response, methods=["GET"]),
         ]
         if not has_api_get:

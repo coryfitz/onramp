@@ -191,6 +191,7 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
 
     response_body = None
     explorer_body = None
+    logo_body = None
     openapi_document = None
     output = ""
     try:
@@ -218,6 +219,12 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
                 timeout=2,
             ) as response:
                 openapi_document = json.loads(response.read().decode("utf-8"))
+            with urlopen(
+                f"http://127.0.0.1:{port}/api/onramp-logo.png",
+                timeout=2,
+            ) as response:
+                assert response.headers.get_content_type() == "image/png"
+                logo_body = response.read()
     finally:
         if process.poll() is None:
             process.send_signal(signal.SIGINT)
@@ -234,6 +241,7 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
     assert json.loads(response_body) == {"status": "ok"}
     assert "Explore your API." in explorer_body
     assert "OpenAPI JSON" in explorer_body
+    assert logo_body.startswith(b"\x89PNG\r\n\x1a\n")
     assert openapi_document["openapi"] == "3.1.0"
     assert openapi_document["paths"]["/api"]["get"]["summary"] == (
         "Check the backend status."

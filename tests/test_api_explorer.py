@@ -37,6 +37,7 @@ def test_api_explorer_is_self_contained_and_loads_the_generated_spec():
     html = api_explorer_html()
 
     assert "Explore your API." in html
+    assert 'src="/api/onramp-logo.png"' in html
     assert 'fetch("/api/openapi.json"' in html
     assert "Send request" in html
     assert "https://" not in html
