@@ -135,3 +135,53 @@ jobs:
 
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  verify:
+    needs: [check_version, publish]
+    if: >-
+      always() &&
+      needs.check_version.result == 'success' &&
+      (
+        (needs.check_version.outputs.publish == 'true' && needs.publish.result == 'success') ||
+        (needs.check_version.outputs.publish == 'false' && needs.publish.result == 'skipped')
+      )
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          package-manager-cache: false
+
+      - name: Wait for the version to become installable
+        env:
+          PACKAGE_VERSION: ${{ needs.check_version.outputs.version }}
+        run: |
+          for attempt in $(seq 1 120); do
+            if python -m pip install \
+              --upgrade \
+              --no-cache-dir \
+              --index-url https://pypi.org/simple \
+              "onramp==${PACKAGE_VERSION}"; then
+              python -m pip check
+              exit 0
+            fi
+            echo "Waiting for onramp==${PACKAGE_VERSION} on PyPI (${attempt}/120)..."
+            sleep 5
+          done
+          echo "onramp==${PACKAGE_VERSION} is not installable after 10 minutes." >&2
+          exit 1
+
+      - name: Test a scaffold from the public PyPI package
+        run: |
+          app_dir="${RUNNER_TEMP}/onramp-public-smoke"
+          cd "${RUNNER_TEMP}"
+          onramp new onramp-public-smoke
+          cd "${app_dir}/build"
+          npm test
+          npm run typecheck
+          npm run build:web

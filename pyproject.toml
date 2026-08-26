@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "onramp"
-version = "0.5.21"
+version = "0.5.22"
 description = "A full-stack Python framework for building web, iOS, and Android apps with React Native"
 readme = "README.md"
 requires-python = ">=3.11"
