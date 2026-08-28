@@ -36,14 +36,15 @@ def test_plans_legacy_project_as_schema_one_without_overwriting_user_files(
     plan = upgrade.plan_project_upgrade(root, CURRENT_VERSION)
 
     assert plan.from_schema == 0
-    assert plan.to_schema == 2
-    assert len(plan.migrations) == 2
+    assert plan.to_schema == 3
+    assert len(plan.migrations) == 3
     assert plan.conflicts == []
     assert not any(change.relative_path == "AGENTS.md" for change in plan.changes)
     pyproject_change = next(
         change for change in plan.changes if change.relative_path == "pyproject.toml"
     )
     assert CURRENT_REQUIREMENT in pyproject_change.content
+    assert "[tool.tortoise]" in pyproject_change.content
 
 
 def test_applies_api_project_upgrade_with_manifest_and_backup(tmp_path):
@@ -55,7 +56,7 @@ def test_applies_api_project_upgrade_with_manifest_and_backup(tmp_path):
     assert backup.is_dir()
     assert (backup / "pyproject.toml").is_file()
     assert (root / PROJECT_MANIFEST).is_file()
-    assert read_project_manifest(root)["schema_version"] == 2
+    assert read_project_manifest(root)["schema_version"] == 3
     assert CURRENT_REQUIREMENT in (root / "pyproject.toml").read_text()
 
 
@@ -131,7 +132,9 @@ def test_up_to_date_root_does_not_create_an_empty_backup(tmp_path, monkeypatch):
     root = create_legacy_project(tmp_path, with_frontend=True)
     (root / "pyproject.toml").write_text(
         '[project]\nname = "example"\ndependencies = [\n'
-        f'    {CURRENT_REQUIREMENT},\n]\n'
+        f'    {CURRENT_REQUIREMENT},\n]\n\n'
+        '[tool.tortoise]\n'
+        'tortoise_orm = "app.db.db_config.TORTOISE_ORM"\n'
     )
     (root / ".gitignore").write_text(upgrade._updated_gitignore(".venv/\n"))
     (root / "AGENTS.md").write_text(target_managed_files(root)["AGENTS.md"])

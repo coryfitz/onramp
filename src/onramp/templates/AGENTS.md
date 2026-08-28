@@ -45,10 +45,9 @@ tools working on __ONRAMP_APP_NAME__.
   applies a migration. `onramp db make`, `onramp db upgrade`, and
   `onramp db check` expose the individual stages; only committed migrations are
   applied outside development.
-- Aerich migration SQL is database-specific. Generate it against the same
-  engine used in production; deployment checks reject recognizable dialect
-  mismatches.
-- `onramp deploy init`, `onramp deploy check`, and `onramp deploy` prepare,
+- Tortoise's native operation-based migrations are shared across SQLite and
+  PostgreSQL. Review explicit `RunSQL` operations for backend portability.
+- `onramp deploy init`, `onramp deploy --check`, and `onramp deploy` prepare,
   validate, build, and deploy the production container. `onramp start` is the
   stable production ASGI entry point.
 

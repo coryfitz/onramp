@@ -7,10 +7,9 @@ BACKEND = False
 # Runtime environment. ONRAMP_ENVIRONMENT can override this at launch.
 ENVIRONMENT = 'development'
 
-# Convenient for local development only. OnRamp ignores this setting unless
-# ENVIRONMENT (or ONRAMP_ENVIRONMENT) is exactly "development". Use Aerich
-# migrations to prepare non-development databases.
-AUTO_GENERATE_SCHEMAS = True
+# Portable migrations create and evolve the local database. Keep direct schema
+# generation disabled so migration history remains authoritative everywhere.
+AUTO_GENERATE_SCHEMAS = False
 
 # Database configuration. DATABASE_URL takes precedence when it is present in
 # the process environment, so production credentials never need to be stored in

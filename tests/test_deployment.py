@@ -6,13 +6,16 @@ from onramp import deployment
 
 def create_project(tmp_path: Path) -> Path:
     app = tmp_path / "app"
-    migrations = app / "db" / "migrations" / "models"
+    migrations = app / "db" / "migrations"
     migrations.mkdir(parents=True)
     (app / "settings.py").write_text(
         "ENVIRONMENT = 'development'\n"
         "DATABASE = {'engine': 'sqlite', 'name': 'db.sqlite3'}\n"
     )
-    (migrations / "0_initial.py").write_text("# migration\n")
+    (migrations / "0001_initial.py").write_text(
+        "from tortoise.migrations import operations as ops\n\n"
+        "operations = [ops.CreateModel(name='Example', fields=[])]\n"
+    )
     (tmp_path / "pyproject.toml").write_text(
         "[project]\nname = 'example'\nversion = '0.1.0'\n"
     )
@@ -79,17 +82,19 @@ def test_deploy_check_rejects_committed_database_password(tmp_path, capsys):
     assert "contains a database password" in capsys.readouterr().out
 
 
-def test_deploy_check_rejects_sqlite_migrations_for_render(tmp_path, capsys):
+def test_deploy_check_accepts_portable_migrations_and_flags_raw_sql(tmp_path, capsys):
     root = create_project(tmp_path)
     deployment.initialize_deployment(root, "render")
-    migration = next((root / "app" / "db" / "migrations").rglob("*.py"))
-    migration.write_text('return "CREATE TABLE example (id INTEGER AUTOINCREMENT)"\n')
+    migration = next((root / "app" / "db" / "migrations").glob("*.py"))
+    migration.write_text(
+        "from tortoise.migrations import operations as ops\n\n"
+        "operations = [ops.RunSQL('CREATE INDEX example_idx ON example (id)')]\n"
+    )
 
-    assert not deployment.check_deployment(root)
+    assert deployment.check_deployment(root)
 
     output = capsys.readouterr().out
-    assert "generated for sqlite" in output
-    assert "uses postgresql" in output
+    assert "review database portability for RunSQL migrations" in output
 
 
 def test_container_deploy_checks_and_builds_image(tmp_path, monkeypatch):

@@ -241,6 +241,12 @@ def handle_deploy(args):
     """Prepare, validate, or run a portable production deployment."""
     action = args.name
     extra = getattr(args, "extra", [])
+    if getattr(args, "check", False):
+        if extra or action not in {None, "check", *SUPPORTED_PROVIDERS}:
+            print("Usage: 'onramp deploy [render|container] --check'")
+            return 2
+        provider = action if action in SUPPORTED_PROVIDERS else None
+        return 0 if check_deployment(PROJECT_ROOT, provider) else 1
     if action == "init":
         if len(extra) > 1:
             print("Usage: 'onramp deploy init [render|container]'")
@@ -249,7 +255,7 @@ def handle_deploy(args):
         return 0 if initialize_deployment(PROJECT_ROOT, provider) else 1
     if action == "check":
         if extra:
-            print("Usage: 'onramp deploy check'")
+            print("Usage: 'onramp deploy --check'")
             return 2
         return 0 if check_deployment(PROJECT_ROOT) else 1
     if action in SUPPORTED_PROVIDERS:
@@ -260,7 +266,7 @@ def handle_deploy(args):
     if action is not None or extra:
         print(
             "Usage: 'onramp deploy [init [render|container] | check | "
-            "render | container]'"
+            "render | container] [--check]'"
         )
         return 2
     return 0 if deploy_project(PROJECT_ROOT) else 1
@@ -826,6 +832,8 @@ def create_app_directory(name, api_only=False, directory_path=None):
         os.makedirs(db_dir, exist_ok=True)
         with open(os.path.join(db_dir, '__init__.py'), 'w') as f:
             f.write("# Database package\n")
+        shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'db_config.py',
+                        os.path.join(db_dir, 'db_config.py'))
 
         if not api_only:
             routes_dir = os.path.join(backend_dir, 'routes')
@@ -1057,7 +1065,7 @@ def main():
   {FRAMEWORK_NAME.lower()} db upgrade
   {FRAMEWORK_NAME.lower()} db check
   {FRAMEWORK_NAME.lower()} deploy init [render|container]
-  {FRAMEWORK_NAME.lower()} deploy check
+  {FRAMEWORK_NAME.lower()} deploy --check
   {FRAMEWORK_NAME.lower()} deploy [render|container]
   {FRAMEWORK_NAME.lower()} del <directory>
 
@@ -1101,7 +1109,7 @@ upgrade creates recoverable backups and never overwrites modified managed files.
         parser.add_argument(
             "--check",
             action="store_true",
-            help="Preview the project upgrade and report whether it can succeed",
+            help="Run a read-only upgrade or deployment preflight",
         )
         parser.add_argument(
             "--to",

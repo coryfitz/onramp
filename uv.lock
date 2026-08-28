@@ -3,21 +3,6 @@ revision = 2
 requires-python = ">=3.11"
 
 [[package]]
-name = "aerich"
-version = "0.10.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "asyncclick" },
-    { name = "dictdiffer" },
-    { name = "tortoise-orm" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/9c/7f7737ea55c97d110c6984553cb9b585f1c1eafe7cc7d1be76b919f37350/aerich-0.10.0.tar.gz", hash = "sha256:8d3eb966b1c8b099ae0602b7ffe25089ba604bc8a322726ece081939dd693376", size = 90941, upload-time = "2026-08-05T15:34:20.949Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6d/be/aa8a015555e991e1c76b115094f6e140005fc7a8a272d3d09f5c5feb36b6/aerich-0.10.0-py3-none-any.whl", hash = "sha256:b665653d111fb01ce85e4bf7a27c9496473c689aaeaf6a5f2a75845d7558671b", size = 49558, upload-time = "2026-08-05T15:34:19.679Z" },
-]
-
-[[package]]
 name = "aiosqlite"
 version = "0.21.0"
 source = { registry = "https://pypi.org/simple" }
@@ -41,18 +26,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f1/b4/636b3b65173d3ce9a38ef5f0522789614e590dab6a8d505340a4efe4c567/anyio-4.10.0.tar.gz", hash = "sha256:3f3fae35c96039744587aa5b8371e7e8e603c0702999535961dd336026973ba6", size = 213252, upload-time = "2025-08-04T08:54:26.451Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6f/12/e5e0282d673bb9746bacfb6e2dba8719989d3660cdb2ea79aee9a9651afb/anyio-4.10.0-py3-none-any.whl", hash = "sha256:60e474ac86736bbfd6f210f7a61218939c318f43f9972497381f1c5e930ed3d1", size = 107213, upload-time = "2025-08-04T08:54:24.882Z" },
-]
-
-[[package]]
-name = "asyncclick"
-version = "8.4.2.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/b2/2c90a32d9b9cf1a4a90ed39cc1177890d146f3f89ae375b061d72110659a/asyncclick-8.4.2.1.tar.gz", hash = "sha256:8f259376ae8d4fcd91961c8ad3e85e9b63c9cf181a122201c7dfed3d7f6024b8", size = 340830, upload-time = "2026-06-30T12:40:33.842Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a7/44/ee9baab53fe4ff487fa47a1c50b174d3b3fb583cf2e22ff5ee33f61be899/asyncclick-8.4.2.1-py3-none-any.whl", hash = "sha256:dbd533769c4e3ce831c05394027ea1cd606c09688e18abab13dbcfbf7dc5a142", size = 121917, upload-time = "2026-06-30T12:40:32.213Z" },
 ]
 
 [[package]]
@@ -300,15 +273,6 @@ toml = [
 ]
 
 [[package]]
-name = "dictdiffer"
-version = "0.9.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/61/7b/35cbccb7effc5d7e40f4c55e2b79399e1853041997fcda15c9ff160abba0/dictdiffer-0.9.0.tar.gz", hash = "sha256:17bacf5fbfe613ccf1b6d512bd766e6b21fb798822a133aa86098b8ac9997578", size = 31513, upload-time = "2021-07-22T13:24:29.276Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/ef/4cb333825d10317a36a1154341ba37e6e9c087bac99c1990ef07ffdb376f/dictdiffer-0.9.0-py2.py3-none-any.whl", hash = "sha256:442bfc693cfcadaf46674575d2eba1c53b42f5e404218ca2c2ff549f2df56595", size = 16754, upload-time = "2021-07-22T13:24:26.783Z" },
-]
-
-[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -346,10 +310,9 @@ wheels = [
 
 [[package]]
 name = "onramp"
-version = "0.5.24"
+version = "0.5.25"
 source = { editable = "." }
 dependencies = [
-    { name = "aerich" },
     { name = "asyncmy" },
     { name = "asyncpg" },
     { name = "starlette" },
@@ -366,7 +329,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aerich", specifier = ">=0.9.1" },
     { name = "asyncmy", specifier = ">=0.2.10,<1" },
     { name = "asyncpg", specifier = ">=0.30.0,<1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },

@@ -148,7 +148,7 @@ def test_project_files_have_real_metadata_and_ignore_native_outputs(tmp_path):
     assert "build/ is the editable" in agents.replace(chr(96), "")
 
 
-def test_generated_settings_limit_schema_generation_to_development(tmp_path, monkeypatch):
+def test_generated_settings_make_committed_migrations_authoritative(tmp_path, monkeypatch):
     target = tmp_path / "api-app"
     monkeypatch.setattr(cli, "init_migrations", lambda _app_dir: True)
 
@@ -160,8 +160,12 @@ def test_generated_settings_limit_schema_generation_to_development(tmp_path, mon
 
     settings = (target / "app" / "settings.py").read_text()
     assert "ENVIRONMENT = 'development'" in settings
-    assert "AUTO_GENERATE_SCHEMAS = True" in settings
-    assert "ignores this setting unless" in settings
+    assert "AUTO_GENERATE_SCHEMAS = False" in settings
+    assert "migration history remains authoritative" in settings
+    assert (target / "app" / "db" / "db_config.py").is_file()
+    pyproject = (target / "pyproject.toml").read_text()
+    assert "[tool.tortoise]" in pyproject
+    assert "[tool.aerich]" not in pyproject
 
 
 def test_create_app_directory_accepts_empty_target_and_skips_netlify_for_api(
@@ -844,6 +848,32 @@ def test_main_dispatches_database_subcommands(monkeypatch):
     ]
 
 
+def test_main_dispatches_deploy_check_flag_and_compatibility_alias(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        cli,
+        "check_deployment",
+        lambda root, provider=None: calls.append((root, provider)) or True,
+    )
+
+    monkeypatch.setattr(cli.sys, "argv", ["onramp", "deploy", "--check"])
+    assert cli.main() == 0
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["onramp", "deploy", "render", "--check"],
+    )
+    assert cli.main() == 0
+    monkeypatch.setattr(cli.sys, "argv", ["onramp", "deploy", "check"])
+    assert cli.main() == 0
+
+    assert calls == [
+        (cli.PROJECT_ROOT, None),
+        (cli.PROJECT_ROOT, "render"),
+        (cli.PROJECT_ROOT, None),
+    ]
+
+
 def test_production_server_uses_host_environment_and_proxy_settings(monkeypatch):
     monkeypatch.setenv("PORT", "9123")
     monkeypatch.setenv("ONRAMP_FORWARDED_ALLOW_IPS", "10.0.0.0/8")
@@ -877,10 +907,7 @@ def test_development_migrate_refuses_to_generate_in_production(
     assert "onramp db upgrade" in capsys.readouterr().out
 
 
-def test_initial_database_make_can_generate_postgres_migration_offline(
-    tmp_path,
-    monkeypatch,
-):
+def test_initial_database_make_creates_portable_operations(tmp_path):
     app_dir = tmp_path / "app"
     models_dir = app_dir / "models"
     models_dir.mkdir(parents=True)
@@ -897,23 +924,21 @@ def test_initial_database_make_can_generate_postgres_migration_offline(
     (tmp_path / "pyproject.toml").write_text(
         "[project]\nname = 'migration-test'\nversion = '0.1.0'\n"
     )
-    monkeypatch.setenv("ONRAMP_DATABASE_ENGINE", "postgresql")
     migrations_module._migration_manager = None
     db_manager_module._db_manager = None
     manager = migrations_module.MigrationManager(str(app_dir))
 
     assert manager.init_migrations()
-    assert not (app_dir / "db" / "migrations").exists()
-    assert manager.create_migration()
-
-    migration_files = list((app_dir / "db" / "migrations").rglob("*.py"))
+    migration_files = list((app_dir / "db" / "migrations").glob("*.py"))
     migration = next(path for path in migration_files if path.name != "__init__.py")
     content = migration.read_text()
-    assert "SERIAL" in content
+    assert "ops.CreateModel" in content
+    assert "SERIAL" not in content
     assert "AUTOINCREMENT" not in content
+    assert (app_dir / "db" / "db.sqlite3").is_file()
 
 
-def test_generated_aerich_config_is_portable(tmp_path):
+def test_generated_tortoise_config_is_portable_and_replaces_aerich(tmp_path):
     app_dir = tmp_path / "app"
     (app_dir / "db").mkdir(parents=True)
     (app_dir / "models").mkdir()
@@ -929,14 +954,17 @@ def test_generated_aerich_config_is_portable(tmp_path):
     db_manager_module._db_manager = None
     migrations_module._migration_manager = None
     migration_manager = migrations_module.MigrationManager(str(app_dir))
-    migration_manager._ensure_aerich_config()
+    migration_manager._ensure_tortoise_config()
 
     config = (app_dir / "db" / "db_config.py").read_text()
     assert "Path(__file__).resolve().parents[1]" in config
     assert str(tmp_path) not in config
+    pyproject = (tmp_path / "pyproject.toml").read_text()
+    assert "[tool.tortoise]" in pyproject
+    assert "[tool.aerich]" not in pyproject
 
 
-def test_aerich_setup_preserves_existing_database_config(tmp_path):
+def test_tortoise_setup_preserves_existing_database_config(tmp_path):
     app_dir = tmp_path / "app"
     db_dir = app_dir / "db"
     db_dir.mkdir(parents=True)
@@ -945,7 +973,7 @@ def test_aerich_setup_preserves_existing_database_config(tmp_path):
     (app_dir / "settings.py").write_text(
         "DATABASE = {'engine': 'sqlite', 'name': 'db.sqlite3'}\n"
     )
-    custom_config = "# Application-owned Aerich configuration\n"
+    custom_config = "# Application-owned Tortoise configuration\n"
     (db_dir / "db_config.py").write_text(custom_config)
     (tmp_path / "pyproject.toml").write_text(
         "[tool.aerich]\n"
@@ -955,6 +983,6 @@ def test_aerich_setup_preserves_existing_database_config(tmp_path):
     db_manager_module._db_manager = None
     migrations_module._migration_manager = None
     manager = migrations_module.MigrationManager(str(app_dir))
-    manager._ensure_aerich_config()
+    manager._ensure_tortoise_config()
 
     assert (db_dir / "db_config.py").read_text() == custom_config

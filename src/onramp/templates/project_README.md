@@ -39,25 +39,25 @@ OpenAPI document is at `/api/openapi.json`. API clients still reach the default
 `app/api/index.py` handler at `/api`; use `/api?raw=1` to view its raw response
 in a browser.
 
-Database connections use Starlette lifespan startup and shutdown. During local
-development, `ENVIRONMENT="development"` and `AUTO_GENERATE_SCHEMAS=True` can
-create missing tables automatically. OnRamp never generates schemas in other
-environments. `DATABASE_URL` overrides the safe local defaults in
+Database connections use Starlette lifespan startup and shutdown. New projects
+set `AUTO_GENERATE_SCHEMAS=False`; committed Tortoise migrations are
+authoritative in every environment. `DATABASE_URL` overrides the safe local defaults in
 `app/settings.py`, so production credentials stay in the hosting provider's
 secret environment. Use `onramp migrate [name]` to create and apply a migration
 during development. Deployments use `onramp db upgrade`; `onramp db make`
 creates a migration explicitly, and `onramp db check` reports pending work.
 Production refuses the local SQLite fallback unless persistent SQLite was
-deliberately selected with `ONRAMP_ALLOW_PRODUCTION_SQLITE=true`.
-Generate migrations using the same database engine as production. New projects
-wait until the first `onramp migrate` to create their initial migration, and
-deployment checks reject migrations that are visibly for a different engine.
+deliberately selected with `ONRAMP_ALLOW_PRODUCTION_SQLITE=true`. Native
+Tortoise migrations describe schema operations rather than database-specific
+SQL, so the same committed chain works with SQLite in development and
+PostgreSQL in production. Review any explicit `RunSQL` operation for backend
+portability.
 
 Prepare and deploy the production backend with:
 
 ```bash
 onramp deploy init
-onramp deploy check
+onramp deploy --check
 onramp deploy
 ```
 

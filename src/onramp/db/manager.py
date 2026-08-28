@@ -72,7 +72,7 @@ class DatabaseManager:
             # Return default settings
             return {
                 'ENVIRONMENT': 'development',
-                'AUTO_GENERATE_SCHEMAS': True,
+                'AUTO_GENERATE_SCHEMAS': False,
                 'DATABASE': {
                     'engine': 'sqlite',
                     'name': 'db.sqlite3',
@@ -107,7 +107,7 @@ class DatabaseManager:
             'AUTO_GENERATE_SCHEMAS': getattr(
                 settings_module,
                 'AUTO_GENERATE_SCHEMAS',
-                True,
+                False,
             ),
             'DATABASE': database_config,
             'DATABASE_OPTIONS': getattr(settings_module, 'DATABASE_OPTIONS', {}),
@@ -136,7 +136,7 @@ class DatabaseManager:
         """Allow automatic schema creation only during development."""
         return (
             self.environment() == 'development'
-            and bool(self.settings.get('AUTO_GENERATE_SCHEMAS', True))
+            and bool(self.settings.get('AUTO_GENERATE_SCHEMAS', False))
         )
 
     def allowed_hosts(self) -> list[str]:
@@ -394,7 +394,11 @@ class DatabaseManager:
                     if module_name != 'models':  # Don't duplicate models.models
                         model_modules.append(f'app.models.{module_name}')
         
-        return model_modules
+        # Tortoise 1.x requires every configured app to name at least one
+        # importable module, even before the project defines its first model.
+        # Keeping the fallback inside OnRamp lets a newly enabled backend boot
+        # while still producing an empty model registry.
+        return model_modules or ['onramp.db.models']
     
     def get_tortoise_config(self):
         """Get Tortoise ORM configuration"""
@@ -404,8 +408,9 @@ class DatabaseManager:
             },
             "apps": {
                 "models": {
-                    "models": self.discover_models() + ["aerich.models"],
+                    "models": self.discover_models(),
                     "default_connection": "default",
+                    "migrations": "app.db.migrations",
                 }
             }
         }

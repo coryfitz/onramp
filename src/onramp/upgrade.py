@@ -53,6 +53,7 @@ class ProjectUpgradePlan:
 PROJECT_MIGRATIONS = {
     0: "adopt compatible dependencies, backups, and versioned project metadata",
     1: "ignore generated native and platform-specific route output",
+    2: "replace Aerich with portable Tortoise ORM migrations",
 }
 
 
@@ -107,7 +108,19 @@ def _updated_pyproject(content: str, target_version: str) -> str | None:
         rf'\g<indent>"{compatible_requirement(target_version)}"\g<suffix>'
     )
     updated, count = pattern.subn(replacement, content, count=1)
-    return updated if count else None
+    if not count:
+        return None
+    updated = re.sub(
+        r"(?ms)^\[tool\.aerich\]\n.*?(?=^\[|\Z)",
+        "",
+        updated,
+    ).rstrip()
+    if "[tool.tortoise]" not in updated:
+        updated += (
+            "\n\n[tool.tortoise]\n"
+            'tortoise_orm = "app.db.db_config.TORTOISE_ORM"'
+        )
+    return updated + "\n"
 
 
 def _updated_gitignore(content: str) -> str:

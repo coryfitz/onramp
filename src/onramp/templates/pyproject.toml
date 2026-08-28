@@ -15,7 +15,5 @@ dependencies = [
 [tool.setuptools.packages.find]
 include = ["app*"]
 
-[tool.aerich]
+[tool.tortoise]
 tortoise_orm = "app.db.db_config.TORTOISE_ORM"
-location = "./app/db/migrations"
-src_folder = "./."

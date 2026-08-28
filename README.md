@@ -90,9 +90,8 @@ onramp backend off
 
 OnRamp manages database startup and shutdown through Starlette's lifespan API.
 New projects default to `ENVIRONMENT="development"` and
-`AUTO_GENERATE_SCHEMAS=True`, which creates missing tables for local
-development. Automatic schema creation is always disabled outside the
-`development` environment, even if the flag is left enabled. `DATABASE_URL`
+`AUTO_GENERATE_SCHEMAS=False`; committed migrations are authoritative in every
+environment. `DATABASE_URL`
 takes precedence over `DATABASE` in `app/settings.py`, keeping production
 credentials out of source control. Structured settings and the
 `ONRAMP_DATABASE_*` variables can additionally configure pool size, connection
@@ -109,10 +108,10 @@ onramp migrate add_model_requests
 For explicit stages, use `onramp db make [name]`, `onramp db upgrade`, and
 `onramp db check`. Migration generation is blocked outside development;
 deployments apply only committed migrations with `onramp db upgrade`.
-Aerich migration SQL is database-specific, so create migrations against the
-same engine used in production. New projects defer their initial migration
-until the first `onramp migrate` instead of prematurely binding it to SQLite;
-`onramp deploy check` rejects a recognizable SQLite/PostgreSQL/MySQL mismatch.
+OnRamp uses Tortoise ORM's native, operation-based migration format, so the
+same committed migration chain can be generated with SQLite in development and
+applied to PostgreSQL in production. New projects create and apply their
+portable initial migration during setup.
 
 OnRamp exposes `/health/live` for process health and `/health/ready` for a real
 database readiness check. Browser access can be constrained with
@@ -124,7 +123,7 @@ Prepare a portable production container and Render configuration:
 
 ```bash
 onramp deploy init
-onramp deploy check
+onramp deploy --check
 onramp deploy
 ```
 
@@ -135,8 +134,8 @@ The generated Render Blueprint provisions an always-on API and PostgreSQL,
 applies committed migrations before traffic changes, and checks
 `/health/ready`.
 
-`onramp deploy check` is read-only. It checks the production files, committed
-migrations and their database dialect, and common secret mistakes. `onramp
+`onramp deploy --check` is read-only. It checks the production files, committed
+migrations, explicit raw-SQL portability risks, and common secret mistakes. `onramp
 deploy` then runs the project's configured test command (or a safe Python
 check), builds the same Docker image
 that can later run on AWS, validates `render.yaml`, and asks the Render CLI to
@@ -294,7 +293,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.23
+onramp upgrade --to 0.5.25
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -311,7 +310,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.23`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.25`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 

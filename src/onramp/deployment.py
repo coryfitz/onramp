@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 from pathlib import Path
@@ -169,7 +170,7 @@ def initialize_deployment(project_root: str | Path, provider: str = "render") ->
             "For the first deployment, connect render.yaml as a Blueprint in "
             "Render; later runs can deploy the selected service directly."
         )
-    print("Next: onramp deploy check")
+    print("Next: onramp deploy --check")
     return True
 
 
@@ -207,33 +208,31 @@ def _migration_files(root: Path) -> list[Path]:
     migrations = root / "app" / "db" / "migrations"
     if not migrations.is_dir():
         return []
-    return [path for path in migrations.rglob("*.py") if path.name != "__init__.py"]
-
-
-def _migration_dialect(paths: list[Path]) -> str | None:
-    """Recognize SQL markers that make Aerich migrations engine-specific."""
-    content = "\n".join(
-        path.read_text(encoding="utf-8", errors="ignore") for path in paths
+    return sorted(
+        path
+        for path in migrations.glob("*.py")
+        if path.name != "__init__.py"
     )
-    if "AUTOINCREMENT" in content or "PRAGMA " in content:
-        return "sqlite"
-    if "SERIAL" in content or "TIMESTAMPTZ" in content:
-        return "postgresql"
-    if "`" in content or "AUTO_INCREMENT" in content:
-        return "mysql"
-    return None
 
 
-def _target_database_engine(provider: str, manager: DatabaseManager) -> str | None:
-    if provider == "render":
-        return "postgresql"
-    database_url = os.environ.get("DATABASE_URL", "").strip()
-    if database_url:
-        scheme = database_url.split(":", 1)[0].lower()
-        return "postgresql" if scheme in {"postgres", "postgresql", "asyncpg"} else scheme
-    if provider == "container":
-        return None
-    return manager._database_config().get("engine")
+def _raw_sql_migrations(paths: list[Path]) -> list[str]:
+    """Find migration modules using explicitly backend-specific SQL operations."""
+    raw_sql = []
+    for path in paths:
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (OSError, SyntaxError):
+            continue
+        if any(
+            isinstance(node, ast.Call)
+            and (
+                isinstance(node.func, ast.Name) and node.func.id == "RunSQL"
+                or isinstance(node.func, ast.Attribute) and node.func.attr == "RunSQL"
+            )
+            for node in ast.walk(tree)
+        ):
+            raw_sql.append(path.name)
+    return raw_sql
 
 
 def check_deployment(
@@ -278,26 +277,15 @@ def check_deployment(
         )
     migration_files = _migration_files(root)
     if not migration_files:
-        instruction = (
-            "ONRAMP_DATABASE_ENGINE=postgresql onramp db make"
-            if provider == "render"
-            else "onramp db make"
-        )
         failures.append(
-            "no committed database migration files were found; run " + instruction
+            "no committed portable migration files were found; run onramp db make"
         )
     else:
-        migration_dialect = _migration_dialect(migration_files)
-        target_dialect = _target_database_engine(provider, manager)
-        if (
-            migration_dialect
-            and target_dialect
-            and migration_dialect != target_dialect
-        ):
-            failures.append(
-                f"migrations were generated for {migration_dialect}, but {provider} "
-                f"uses {target_dialect}; generate migrations against the production "
-                "database engine"
+        raw_sql = _raw_sql_migrations(migration_files)
+        if raw_sql:
+            notices.append(
+                "review database portability for RunSQL migrations: "
+                + ", ".join(raw_sql)
             )
 
     database_url = os.environ.get("DATABASE_URL", "").strip()

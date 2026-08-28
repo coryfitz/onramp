@@ -1,187 +1,198 @@
-"""
-Migration management for OnRamp using Aerich
-"""
+"""Portable migration management using Tortoise ORM's native operations."""
+
+from __future__ import annotations
+
 import os
-import sys
+from pathlib import Path
+import re
 import subprocess
+import sys
 from typing import Optional
+
 from .manager import get_db_manager
 
+
+TORTOISE_CONFIG = "app.db.db_config.TORTOISE_ORM"
+TORTOISE_TOOL_SECTION = (
+    "[tool.tortoise]\n"
+    f'tortoise_orm = "{TORTOISE_CONFIG}"\n'
+)
+
+
+def _replace_legacy_tool_config(content: str) -> str:
+    """Replace Aerich's project configuration with Tortoise's native CLI config."""
+    updated = re.sub(
+        r"(?ms)^\[tool\.aerich\]\n.*?(?=^\[|\Z)",
+        "",
+        content,
+    ).rstrip()
+    if "[tool.tortoise]" not in updated:
+        updated += "\n\n" + TORTOISE_TOOL_SECTION.rstrip()
+    return updated + "\n"
+
+
 class MigrationManager:
-    """Manages database migrations using Aerich"""
-    
+    """Manage backend-neutral migrations through Tortoise ORM."""
+
     def __init__(self, app_dir: str = None):
         self.app_dir = app_dir
         self.db_manager = get_db_manager(app_dir)
-        self.project_root = os.path.dirname(self.db_manager.app_dir)
-        self.db_dir = os.path.join(self.db_manager.app_dir, 'db')  # app/db/
-        
-    def _ensure_aerich_config(self):
-        """Ensure aerich.toml exists with proper configuration"""
-        aerich_config_path = os.path.join(self.project_root, 'pyproject.toml')
-        
-        # Ensure the db directory exists
-        os.makedirs(self.db_dir, exist_ok=True)
-        
-        aerich_section = f"""
-[tool.aerich]
-tortoise_orm = "app.db.db_config.TORTOISE_ORM"
-location = "./app/db/migrations"
-src_folder = "./."
-"""
-        
-        # Create db_config.py in app/db/ directory for aerich to import
-        db_config_path = os.path.join(self.db_dir, 'db_config.py')
-        if not os.path.exists(db_config_path):
-            with open(db_config_path, 'w') as f:
-                f.write("""# Auto-generated database config for Aerich.
-# Resolve the app directory at import time so cloned or moved projects remain portable.
+        self.project_root = Path(self.db_manager.app_dir).resolve().parent
+        self.db_dir = Path(self.db_manager.app_dir).resolve() / "db"
+        self.migrations_dir = self.db_dir / "migrations"
+
+    def _ensure_tortoise_config(self) -> None:
+        """Create the portable Tortoise config and migration package if absent."""
+        self.db_dir.mkdir(parents=True, exist_ok=True)
+        init_path = self.db_dir / "__init__.py"
+        if not init_path.exists():
+            init_path.write_text("# Database package\n", encoding="utf-8")
+
+        db_config_path = self.db_dir / "db_config.py"
+        if not db_config_path.exists():
+            db_config_path.write_text(
+                """# Database configuration for Tortoise ORM and its migration CLI.
 from pathlib import Path
 
 from onramp.db.manager import DatabaseManager
 
+
 APP_DIR = Path(__file__).resolve().parents[1]
 TORTOISE_ORM = DatabaseManager(str(APP_DIR)).get_tortoise_config()
-""")
-        
-        # Create __init__.py in db directory to make it a package
-        init_path = os.path.join(self.db_dir, '__init__.py')
-        if not os.path.exists(init_path):
-            with open(init_path, 'w') as f:
-                f.write("# Database package\n")
-        
-        if os.path.exists(aerich_config_path):
-            with open(aerich_config_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            if '[tool.aerich]' in content:
-                return
-            with open(aerich_config_path, 'a') as f:
-                f.write(aerich_section)
+""",
+                encoding="utf-8",
+            )
+
+        self.migrations_dir.mkdir(parents=True, exist_ok=True)
+        migrations_init = self.migrations_dir / "__init__.py"
+        if not migrations_init.exists():
+            migrations_init.write_text("", encoding="utf-8")
+
+        pyproject_path = self.project_root / "pyproject.toml"
+        if pyproject_path.exists():
+            content = pyproject_path.read_text(encoding="utf-8")
+            updated = _replace_legacy_tool_config(content)
+            if updated != content:
+                pyproject_path.write_text(updated, encoding="utf-8")
         else:
-            with open(aerich_config_path, 'w') as f:
-                f.write(f"""[build-system]
-requires = ["setuptools>=61.0"]
+            pyproject_path.write_text(
+                """[build-system]
+requires = ["setuptools>=77.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "onramp-app"
 version = "0.1.0"
-{aerich_section}""")
-    
-    def _run_aerich_command(self, command: list, cwd: str = None):
-        """Run an aerich command"""
-        result = self._run_aerich_command_result(command, cwd=cwd)
-        if result.returncode == 0:
-            if result.stdout:
-                print(result.stdout)
-            if result.stderr:
-                print(result.stderr)
-            return True
 
-        print(f"Error running aerich {' '.join(command)}")
-        if result.stdout:
-            print(f"stdout: {result.stdout}")
-        if result.stderr:
-            print(f"stderr: {result.stderr}")
-        return False
+"""
+                + TORTOISE_TOOL_SECTION,
+                encoding="utf-8",
+            )
 
-    def _run_aerich_command_result(self, command: list, cwd: str = None):
-        """Run Aerich and return its completed process for inspection."""
-        if cwd is None:
-            cwd = self.project_root
-            
-        full_command = [sys.executable, "-m", "aerich"] + command
-        
+    def migration_files(self) -> list[Path]:
+        """Return native Tortoise migration modules, excluding legacy subfolders."""
+        if not self.migrations_dir.is_dir():
+            return []
+        return sorted(
+            path
+            for path in self.migrations_dir.glob("*.py")
+            if path.name != "__init__.py"
+        )
+
+    def _run_tortoise_command_result(self, command: list[str]):
+        full_command = [
+            sys.executable,
+            "-m",
+            "tortoise",
+            "-c",
+            TORTOISE_CONFIG,
+            *command,
+        ]
         return subprocess.run(
             full_command,
-            cwd=cwd,
+            cwd=self.project_root,
             capture_output=True,
             text=True,
             check=False,
         )
-    
-    def init_migrations(self):
-        """Prepare Aerich without binding a new project to a database dialect."""
-        print("Setting up migration system...")
-        self._ensure_aerich_config()
-        migrations_dir = os.path.join(self.db_dir, 'migrations')
-        if os.path.exists(migrations_dir):
+
+    def _run_tortoise_command(self, command: list[str]) -> bool:
+        result = self._run_tortoise_command_result(command)
+        if result.stdout:
+            print(result.stdout.rstrip())
+        if result.stderr:
+            print(result.stderr.rstrip())
+        if result.returncode == 0:
+            return True
+        print(f"Error running Tortoise migration command: {' '.join(command)}")
+        return False
+
+    def init_migrations(self) -> bool:
+        """Create and apply the initial portable migration for a new project."""
+        print("Setting up portable Tortoise migrations...")
+        self._ensure_tortoise_config()
+        if self.migration_files():
             print("Migration system already initialized")
-        else:
-            print(
-                "Migration configuration ready. The first 'onramp migrate' "
-                "will create migrations for the configured database engine."
-            )
+            return True
+        if not self.create_migration("initial"):
+            return False
+        if not self.apply_migrations():
+            return False
+        print("Portable migration system initialized")
         return True
-    
-    def create_migration(self, name: Optional[str] = None):
-        """Create a new migration"""
+
+    def create_migration(self, name: Optional[str] = None) -> bool:
+        """Create a backend-neutral migration from model changes."""
         if self.db_manager.environment() != "development":
             print(
                 "Migration creation is available only in development. "
                 "Use 'onramp db upgrade' to apply committed migrations."
             )
             return False
-        print("Creating migration...")
-        self._ensure_aerich_config()
-        
-        migrations_dir = os.path.join(self.db_dir, 'migrations')
-        if not os.path.exists(migrations_dir):
-            if name:
-                print(
-                    "The first migration uses Aerich's initial migration name; "
-                    "the supplied name will apply to later migrations."
-                )
-            return self._run_aerich_command(["init-migrations"])
-
-        command = ["migrate", "--offline"]
+        print("Creating portable migration...")
+        self._ensure_tortoise_config()
+        command = ["makemigrations"]
         if name:
             command.extend(["--name", name])
-        
-        return self._run_aerich_command(command)
-    
-    def apply_migrations(self):
-        """Apply pending migrations"""
+        return self._run_tortoise_command(command)
+
+    def apply_migrations(self) -> bool:
+        """Apply every pending portable migration."""
         print("Applying migrations...")
         self.db_manager.validate_runtime_configuration()
-        self._ensure_aerich_config()
-        
-        # Make sure aerich is initialized first
-        if not os.path.exists(os.path.join(self.db_dir, 'migrations')):
+        self._ensure_tortoise_config()
+        if not self.migration_files():
             print(
-                "No committed migrations were found. Run 'onramp migrate' in "
-                "development against the same database engine used in production."
+                "No committed migration files were found. Run 'onramp migrate' "
+                "in development first."
             )
             return False
-        
-        return self._run_aerich_command(["upgrade"])
+        return self._run_tortoise_command(["upgrade"])
 
-    def check_migrations(self):
-        """Report whether the configured database has pending migrations."""
-        self._ensure_aerich_config()
-        migrations_dir = os.path.join(self.db_dir, 'migrations')
-        if not os.path.exists(migrations_dir):
-            print("No migration directory was found.")
+    def check_migrations(self) -> bool:
+        """Return whether the configured database has no pending migrations."""
+        self.db_manager.validate_runtime_configuration()
+        self._ensure_tortoise_config()
+        if not self.migration_files():
+            print("No portable migration files were found.")
             return False
 
-        result = self._run_aerich_command_result(["heads"])
+        result = self._run_tortoise_command_result(["upgrade", "--dry-run"])
+        output = "\n".join(part for part in (result.stdout, result.stderr) if part)
         if result.returncode != 0:
             print("Could not check database migrations.")
-            if result.stderr:
-                print(result.stderr)
+            if output.strip():
+                print(output.rstrip())
             return False
-
-        output = result.stdout.strip()
-        if not output or output == "No available heads.":
+        if "No migrations to apply" in output:
             print("Database migrations are up to date.")
             return True
-
         print("Pending database migrations:")
-        print(output)
+        print(output.rstrip())
         return False
-    
-    def migrate_with_prep(self, name: Optional[str] = None):
-        """Create and apply migrations in one go"""
+
+    def migrate_with_prep(self, name: Optional[str] = None) -> bool:
+        """Create and apply migrations in one development command."""
         if self.db_manager.environment() != "development":
             print(
                 "'onramp migrate' creates migration files and is available only "
@@ -189,33 +200,16 @@ version = "0.1.0"
             )
             return False
         print("Preparing and applying migrations...")
-        self._ensure_aerich_config()
-        
-        # Check if this is the first time - if so, initialize
-        migrations_dir = os.path.join(self.db_dir, 'migrations')
-        if not os.path.exists(migrations_dir):
-            print("First time setup - initializing migration system...")
-            if name:
-                print(
-                    "The first migration uses Aerich's initial migration name; "
-                    "the supplied name will apply to later migrations."
-                )
-            if not self._run_aerich_command(["init-db"]):
-                return False
-            print("Migration system initialized and initial schema created")
-            return True
-        
-        # Otherwise, create migration then apply
-        if self.create_migration(name):
-            # Then apply it
-            return self.apply_migrations()
-        return False
+        if not self.create_migration(name):
+            return False
+        return self.apply_migrations()
 
-# Global migration manager
+
 _migration_manager = None
 
+
 def get_migration_manager(app_dir: str = None):
-    """Get or create migration manager instance"""
+    """Get or create the manager associated with the requested app directory."""
     global _migration_manager
     requested_app_dir = os.path.abspath(app_dir) if app_dir else None
     current_app_dir = (
@@ -229,29 +223,22 @@ def get_migration_manager(app_dir: str = None):
         _migration_manager = MigrationManager(app_dir)
     return _migration_manager
 
+
 def create_migration(name: Optional[str] = None, app_dir: str = None):
-    """Create a new migration"""
-    manager = get_migration_manager(app_dir)
-    return manager.create_migration(name)
+    return get_migration_manager(app_dir).create_migration(name)
+
 
 def migrate(name: Optional[str] = None, app_dir: str = None):
-    """Apply migrations (with optional prep step)"""
-    manager = get_migration_manager(app_dir)
-    return manager.migrate_with_prep(name)
+    return get_migration_manager(app_dir).migrate_with_prep(name)
 
 
 def apply_migrations(app_dir: str = None):
-    """Apply existing migrations without generating new files."""
-    manager = get_migration_manager(app_dir)
-    return manager.apply_migrations()
+    return get_migration_manager(app_dir).apply_migrations()
 
 
 def check_migrations(app_dir: str = None):
-    """Report whether existing migrations have all been applied."""
-    manager = get_migration_manager(app_dir)
-    return manager.check_migrations()
+    return get_migration_manager(app_dir).check_migrations()
+
 
 def init_migrations(app_dir: str = None):
-    """Initialize migration system (internal use only)"""
-    manager = get_migration_manager(app_dir)
-    return manager.init_migrations()
+    return get_migration_manager(app_dir).init_migrations()
