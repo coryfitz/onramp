@@ -874,6 +874,23 @@ def test_main_dispatches_deploy_check_flag_and_compatibility_alias(monkeypatch):
     ]
 
 
+def test_deploy_scope_is_selected_by_the_prompt_not_a_subcommand(
+    monkeypatch,
+    capsys,
+):
+    called = []
+    monkeypatch.setattr(
+        cli,
+        "deploy_project",
+        lambda *_args: called.append(True) or True,
+    )
+    monkeypatch.setattr(cli.sys, "argv", ["onramp", "deploy", "backend"])
+
+    assert cli.main() == 2
+    assert not called
+    assert "Usage: 'onramp deploy" in capsys.readouterr().out
+
+
 def test_production_server_uses_host_environment_and_proxy_settings(monkeypatch):
     monkeypatch.setenv("PORT", "9123")
     monkeypatch.setenv("ONRAMP_FORWARDED_ALLOW_IPS", "10.0.0.0/8")

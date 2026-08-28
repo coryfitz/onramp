@@ -44,6 +44,7 @@ build/.metro-health-check*
 
 # Tooling
 .onramp/backups/
+.onramp/deploy-state.json
 build/.onramp/backups/
 .idea/
 .vscode/

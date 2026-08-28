@@ -48,8 +48,9 @@ tools working on __ONRAMP_APP_NAME__.
 - Tortoise's native operation-based migrations are shared across SQLite and
   PostgreSQL. Review explicit `RunSQL` operations for backend portability.
 - `onramp deploy init`, `onramp deploy --check`, and `onramp deploy` prepare,
-  validate, build, and deploy the production container. `onramp start` is the
-  stable production ASGI entry point.
+  select, validate, build, and deploy configured backend and web targets. When
+  both are selected, validate and build both before deploying the backend and
+  then the frontend. `onramp start` is the stable production ASGI entry point.
 
 ## Native behavior
 

@@ -57,6 +57,21 @@ project without `.onramp/project.toml`. Upgrade checks must not mutate either
 tree, and a modified managed file must stop the upgrade before other files
 change.
 
+## Deployment invariants
+
+- Keep `onramp deploy` as the single interactive deployment entry point. When
+  separate backend and web targets exist, ask for backend, frontend, or both.
+- `onramp deploy --check` uses the same target selection but remains read-only.
+- Noninteractive runs use committed `default_targets`; never guess between
+  multiple services when no default is configured.
+- Validate and build every selected artifact before changing production. When
+  deploying separate services together, deploy and health-check the backend
+  before the web frontend.
+- Deployment topology belongs in `onramp.toml`, runtime application behavior in
+  `app/settings.py`, and secrets in the provider environment.
+- Preserve legacy backend-only `onramp.toml` files and represent a combined
+  frontend/backend container as one full-application target without prompting.
+
 ## Native launcher invariants
 
 - Never attach an app to an unidentified Metro server merely because port 8081

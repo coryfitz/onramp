@@ -119,7 +119,7 @@ database readiness check. Browser access can be constrained with
 
 ## Production deployment
 
-Prepare a portable production container and Render configuration:
+Prepare the project's production targets and Render configuration:
 
 ```bash
 onramp deploy init
@@ -127,20 +127,32 @@ onramp deploy --check
 onramp deploy
 ```
 
-`onramp deploy init render` creates `Dockerfile`, `.dockerignore`,
-`.env.example`, `onramp.toml`, and `render.yaml` without overwriting existing
-files. `onramp deploy init container` creates only the provider-neutral files.
-The generated Render Blueprint provisions an always-on API and PostgreSQL,
-applies committed migrations before traffic changes, and checks
-`/health/ready`.
+`onramp deploy init render` detects the Python backend and web frontend and
+records them as separate targets in `onramp.toml`. It creates the necessary
+portable container files and a `render.yaml` Blueprint without overwriting
+existing files. The Blueprint provisions the API, PostgreSQL, and a static web
+site when those components exist. `onramp deploy init container` prepares only
+provider-neutral artifacts.
 
-`onramp deploy --check` is read-only. It checks the production files, committed
-migrations, explicit raw-SQL portability risks, and common secret mistakes. `onramp
-deploy` then runs the project's configured test command (or a safe Python
-check), builds the same Docker image
-that can later run on AWS, validates `render.yaml`, and asks the Render CLI to
-deploy and wait for health. Set `ONRAMP_RENDER_SERVICE` or `render_service` in
-`onramp.toml` for non-interactive service selection.
+When both targets are configured, interactive `onramp deploy` and `onramp
+deploy --check` ask whether to operate on the backend, web frontend, or both.
+The previous deployment choice becomes the suggested default without changing
+tracked files. A single target or combined full-application container proceeds
+without an unnecessary question. The check remains read-only.
+
+Before changing production, `onramp deploy` validates and builds every selected
+target. When both services are selected, it deploys the healthy backend before
+the frontend. Noninteractive environments use `[deploy].default_targets` from
+`onramp.toml` instead of prompting. Multi-service Render automation can set
+`render_service` on each target or use `ONRAMP_RENDER_BACKEND_SERVICE` and
+`ONRAMP_RENDER_WEB_SERVICE`. The legacy `ONRAMP_RENDER_SERVICE` setting remains
+available for a single selected service.
+
+Deployment topology and nonsecret build settings belong in `onramp.toml`.
+Backend runtime behavior remains in `app/settings.py`, while passwords, API
+tokens, database URLs, and deploy hooks remain in the provider's secret
+environment. A combined container can be represented as one target whose
+`components` are `["backend", "web"]`.
 
 Every host starts the production process with:
 
@@ -293,7 +305,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.25
+onramp upgrade --to 0.5.26
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -310,7 +322,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.25`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.26`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 

@@ -53,7 +53,7 @@ SQL, so the same committed chain works with SQLite in development and
 PostgreSQL in production. Review any explicit `RunSQL` operation for backend
 portability.
 
-Prepare and deploy the production backend with:
+Prepare and deploy the configured production targets with:
 
 ```bash
 onramp deploy init
@@ -61,13 +61,22 @@ onramp deploy --check
 onramp deploy
 ```
 
-The default provider is Render. Use `onramp deploy init container` for only the
-portable Docker files. Provider configuration is stored in `onramp.toml`, while
-secret values stay in the provider environment or an ignored local `.env`
-loaded by your shell or container tool. The first Render deployment requires a
-one-time connection of the generated `render.yaml` Blueprint in the Render
-dashboard; after that, `onramp deploy` validates, builds, deploys, waits for the
-health check, and reports success or failure.
+The default provider is Render. `onramp deploy init` detects the backend and web
+frontend and records them as separate targets in `onramp.toml`; use `onramp
+deploy init container` for provider-neutral artifacts only. When both targets
+exist, interactive checks and deployments ask whether to operate on the
+backend, frontend, or both. Noninteractive environments use the committed
+`default_targets`. OnRamp validates and builds every selection before changing
+production, then deploys the backend before the frontend. The last interactive
+choice is remembered in ignored local state.
+
+The first Render deployment requires a one-time connection of the generated
+`render.yaml` Blueprint in the Render dashboard. Set each target's
+`render_service`, or `ONRAMP_RENDER_BACKEND_SERVICE` and
+`ONRAMP_RENDER_WEB_SERVICE`, for noninteractive multi-service deployments.
+Deployment topology belongs in `onramp.toml`; backend runtime behavior remains
+in `app/settings.py`, and secret values stay in the provider environment or an
+ignored local `.env` loaded by your shell or container tool.
 Production hosts run `onramp start`, which reads `PORT`, serves liveness at
 `/health/live`, checks the database at `/health/ready`, and shuts down
 gracefully.
