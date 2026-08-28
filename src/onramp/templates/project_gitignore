@@ -11,6 +11,11 @@ __pycache__/
 .coverage
 htmlcov/
 
+# Local deployment secrets
+.env
+.env.*
+!.env.example
+
 # Local databases
 app/db/*.sqlite3
 app/db/*.sqlite3-*

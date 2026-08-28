@@ -18,7 +18,19 @@ import threading
 import time
 import webbrowser
 from watchfiles import watch
-from .db.migrations import create_migration, migrate, init_migrations
+from .db.migrations import (
+    apply_migrations,
+    check_migrations,
+    create_migration,
+    init_migrations,
+    migrate,
+)
+from .deployment import (
+    SUPPORTED_PROVIDERS,
+    check_deployment,
+    deploy_project,
+    initialize_deployment,
+)
 from .frontend import (
     create_frontend,
     doctor_frontend,
@@ -198,6 +210,60 @@ def handle_migrate(args):
         print("Migration failed")
         return 1
     return 0
+
+
+def handle_db(args):
+    """Handle explicit development and production migration stages."""
+    operation = args.name
+    extra = getattr(args, "extra", [])
+    if operation == "make":
+        if len(extra) > 1:
+            print("Usage: 'onramp db make [name]'")
+            return 2
+        success = create_migration(extra[0] if extra else None)
+    elif operation == "upgrade":
+        if extra:
+            print("Usage: 'onramp db upgrade'")
+            return 2
+        success = apply_migrations()
+    elif operation == "check":
+        if extra:
+            print("Usage: 'onramp db check'")
+            return 2
+        success = check_migrations()
+    else:
+        print("Usage: 'onramp db <make [name] | upgrade | check>'")
+        return 2
+    return 0 if success else 1
+
+
+def handle_deploy(args):
+    """Prepare, validate, or run a portable production deployment."""
+    action = args.name
+    extra = getattr(args, "extra", [])
+    if action == "init":
+        if len(extra) > 1:
+            print("Usage: 'onramp deploy init [render|container]'")
+            return 2
+        provider = extra[0] if extra else "render"
+        return 0 if initialize_deployment(PROJECT_ROOT, provider) else 1
+    if action == "check":
+        if extra:
+            print("Usage: 'onramp deploy check'")
+            return 2
+        return 0 if check_deployment(PROJECT_ROOT) else 1
+    if action in SUPPORTED_PROVIDERS:
+        if extra:
+            print("Usage: 'onramp deploy [render|container]'")
+            return 2
+        return 0 if deploy_project(PROJECT_ROOT, action) else 1
+    if action is not None or extra:
+        print(
+            "Usage: 'onramp deploy [init [render|container] | check | "
+            "render | container]'"
+        )
+        return 2
+    return 0 if deploy_project(PROJECT_ROOT) else 1
 
 # -----------------------------------------------------------------------------
 # Framework config (from config.toml)
@@ -426,6 +492,54 @@ def _uvicorn_cmd(port: int):
         "-m", "uvicorn", "onramp.app:app",
         "--port", str(port),
     ]
+
+
+def _production_uvicorn_cmd(port: int | None = None, host: str | None = None):
+    """Build the stable production server command used by every host."""
+    resolved_host = host or os.environ.get("ONRAMP_HOST") or "0.0.0.0"
+    configured_port = os.environ.get("PORT") or os.environ.get("ONRAMP_PORT")
+    try:
+        resolved_port = int(configured_port) if configured_port else int(port or 8000)
+    except ValueError as error:
+        raise ValueError("PORT and ONRAMP_PORT must be integers") from error
+    forwarded = os.environ.get("ONRAMP_FORWARDED_ALLOW_IPS", "127.0.0.1")
+    command = [
+        sys.executable,
+        "-B",
+        "-m",
+        "uvicorn",
+        "onramp.app:app",
+        "--host",
+        resolved_host,
+        "--port",
+        str(resolved_port),
+        "--lifespan",
+        "on",
+        "--proxy-headers",
+        "--forwarded-allow-ips",
+        forwarded,
+    ]
+    workers = os.environ.get("ONRAMP_WORKERS", "").strip()
+    if workers:
+        try:
+            if int(workers) < 1:
+                raise ValueError
+        except ValueError as error:
+            raise ValueError("ONRAMP_WORKERS must be a positive integer") from error
+        command.extend(["--workers", workers])
+    return command
+
+
+def start_production_server(port: int | None = None, host: str | None = None):
+    """Replace the CLI process with Uvicorn so platform signals are graceful."""
+    environment = os.environ.copy()
+    environment.setdefault("ONRAMP_ENVIRONMENT", "production")
+    command = _production_uvicorn_cmd(port=port, host=host)
+    print(
+        f"Starting production server on {command[command.index('--host') + 1]}:"
+        f"{command[command.index('--port') + 1]}"
+    )
+    os.execvpe(command[0], command, environment)
 
 def _start_uvicorn_worker(app_dir: str, port: int):
     """Start and track a worker owned by the OnRamp parent process."""
@@ -929,6 +1043,7 @@ def main():
   {FRAMEWORK_NAME.lower()} new <name> [--api | --mobile | --all]
   {FRAMEWORK_NAME.lower()} backend [off]
   {FRAMEWORK_NAME.lower()} run [--port 8000]
+  {FRAMEWORK_NAME.lower()} start [--host 0.0.0.0] [--port 8000]
   {FRAMEWORK_NAME.lower()} web
   {FRAMEWORK_NAME.lower()} ios [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild]
   {FRAMEWORK_NAME.lower()} android [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild]
@@ -938,6 +1053,12 @@ def main():
   {FRAMEWORK_NAME.lower()} upgrade [--check] [--to VERSION]
   {FRAMEWORK_NAME.lower()} prepmigrations [name]
   {FRAMEWORK_NAME.lower()} migrate [name]
+  {FRAMEWORK_NAME.lower()} db make [name]
+  {FRAMEWORK_NAME.lower()} db upgrade
+  {FRAMEWORK_NAME.lower()} db check
+  {FRAMEWORK_NAME.lower()} deploy init [render|container]
+  {FRAMEWORK_NAME.lower()} deploy check
+  {FRAMEWORK_NAME.lower()} deploy [render|container]
   {FRAMEWORK_NAME.lower()} del <directory>
 
 The --port option controls the Python backend. --metro-port controls the
@@ -949,7 +1070,13 @@ upgrade creates recoverable backups and never overwrites modified managed files.
         )
         parser.add_argument("command", help="The command to run")
         parser.add_argument("name", nargs='?', help="The name of the app directory/migration to be created")
+        parser.add_argument("extra", nargs='*', help=argparse.SUPPRESS)
         parser.add_argument("--port", type=int, default=8000, help="Port for the development server")
+        parser.add_argument(
+            "--host",
+            default=None,
+            help="Host interface for the production server",
+        )
         parser.add_argument(
             "--metro-port",
             type=int,
@@ -1043,6 +1170,13 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             else:
                 return 0 if run_command_logic(port=args.port) else 1
 
+        elif args.command == "start":
+            if args.name is not None or args.extra:
+                print("Usage: 'onramp start [--host HOST] [--port PORT]'")
+                return 2
+            start_production_server(port=args.port, host=args.host)
+            return 0
+
         elif args.command == "ios":
             return 0 if run_ios(
                 args.port,
@@ -1083,6 +1217,12 @@ upgrade creates recoverable backups and never overwrites modified managed files.
 
         elif args.command == "migrate":
             return handle_migrate(args)
+
+        elif args.command == "db":
+            return handle_db(args)
+
+        elif args.command == "deploy":
+            return handle_deploy(args)
         
         elif args.command == "repair:ios":
             return 0 if repair_ios(fresh=args.fresh) else 1

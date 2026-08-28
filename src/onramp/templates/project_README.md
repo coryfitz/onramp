@@ -42,8 +42,35 @@ in a browser.
 Database connections use Starlette lifespan startup and shutdown. During local
 development, `ENVIRONMENT="development"` and `AUTO_GENERATE_SCHEMAS=True` can
 create missing tables automatically. OnRamp never generates schemas in other
-environments. Set `ONRAMP_ENVIRONMENT=production` and apply Aerich migrations
-before running a deployed backend.
+environments. `DATABASE_URL` overrides the safe local defaults in
+`app/settings.py`, so production credentials stay in the hosting provider's
+secret environment. Use `onramp migrate [name]` to create and apply a migration
+during development. Deployments use `onramp db upgrade`; `onramp db make`
+creates a migration explicitly, and `onramp db check` reports pending work.
+Production refuses the local SQLite fallback unless persistent SQLite was
+deliberately selected with `ONRAMP_ALLOW_PRODUCTION_SQLITE=true`.
+Generate migrations using the same database engine as production. New projects
+wait until the first `onramp migrate` to create their initial migration, and
+deployment checks reject migrations that are visibly for a different engine.
+
+Prepare and deploy the production backend with:
+
+```bash
+onramp deploy init
+onramp deploy check
+onramp deploy
+```
+
+The default provider is Render. Use `onramp deploy init container` for only the
+portable Docker files. Provider configuration is stored in `onramp.toml`, while
+secret values stay in the provider environment or an ignored local `.env`
+loaded by your shell or container tool. The first Render deployment requires a
+one-time connection of the generated `render.yaml` Blueprint in the Render
+dashboard; after that, `onramp deploy` validates, builds, deploys, waits for the
+health check, and reports success or failure.
+Production hosts run `onramp start`, which reads `PORT`, serves liveness at
+`/health/live`, checks the database at `/health/ready`, and shuts down
+gracefully.
 
 `--port` controls the Python server. `--metro-port` selects a React Native
 Metro port. OnRamp automatically selects a free Metro port when it is omitted.

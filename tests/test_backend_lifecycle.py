@@ -99,6 +99,7 @@ def test_database_lifespan_skips_schema_generation_outside_opted_in_development(
 ):
     app_dir = create_app_dir(tmp_path, settings)
     calls = []
+    monkeypatch.setenv("ONRAMP_ALLOW_PRODUCTION_SQLITE", "true")
     monkeypatch.setattr(db_manager_module, "Tortoise", fake_tortoise(calls))
     db_manager_module._db_manager = None
 
@@ -114,12 +115,103 @@ def test_environment_override_disables_automatic_schema_generation(
     app_dir = create_app_dir(tmp_path)
     calls = []
     monkeypatch.setenv("ONRAMP_ENVIRONMENT", "production")
+    monkeypatch.setenv("ONRAMP_ALLOW_PRODUCTION_SQLITE", "true")
     monkeypatch.setattr(db_manager_module, "Tortoise", fake_tortoise(calls))
     db_manager_module._db_manager = None
 
     run_lifespan(db_manager_module.database_lifespan(str(app_dir)))
 
     assert [call[0] for call in calls] == ["init", "close"]
+
+
+def test_production_rejects_accidental_sqlite(tmp_path, monkeypatch):
+    app_dir = create_app_dir(tmp_path)
+    monkeypatch.setenv("ONRAMP_ENVIRONMENT", "production")
+    db_manager_module._db_manager = None
+
+    with pytest.raises(RuntimeError, match="Production is configured to use SQLite"):
+        run_lifespan(db_manager_module.database_lifespan(str(app_dir)))
+
+
+def test_database_url_environment_override_is_encoded_and_described_safely(
+    tmp_path,
+    monkeypatch,
+):
+    app_dir = create_app_dir(
+        tmp_path,
+        (
+            "DATABASE = {\n"
+            "    'engine': 'postgresql',\n"
+            "    'name': 'fallback',\n"
+            "    'user': 'fallback',\n"
+            "    'password': 'committed-secret',\n"
+            "}\n"
+            "DATABASE_OPTIONS = {'min_size': 2, 'max_size': 7}\n"
+        ),
+    )
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://deploy:p%40ssword@db.example.com:5432/swerve",
+    )
+
+    manager = db_manager_module.DatabaseManager(str(app_dir))
+
+    assert manager._get_database_url() == (
+        "postgresql://deploy:p%40ssword@db.example.com:5432/swerve"
+        "?min_size=2&max_size=7"
+    )
+    description = manager.database_description()
+    assert description == "postgresql (db.example.com:5432/swerve)"
+    assert "deploy" not in description
+    assert "ssword" not in description
+
+
+def test_structured_database_settings_encode_credentials(tmp_path):
+    app_dir = create_app_dir(
+        tmp_path,
+        (
+            "DATABASE = {\n"
+            "    'engine': 'postgresql',\n"
+            "    'name': 'model requests',\n"
+            "    'host': 'db.example.com',\n"
+            "    'port': 5432,\n"
+            "    'user': 'user@example.com',\n"
+            "    'password': 'p:/?@ss',\n"
+            "}\n"
+        ),
+    )
+
+    manager = db_manager_module.DatabaseManager(str(app_dir))
+
+    assert manager._get_database_url() == (
+        "postgres://user%40example.com:p%3A%2F%3F%40ss@"
+        "db.example.com:5432/model%20requests"
+    )
+    connection = manager.get_tortoise_config()["connections"]["default"]
+    assert connection["credentials"]["user"] == "user@example.com"
+    assert connection["credentials"]["password"] == "p:/?@ss"
+
+
+def test_database_startup_log_never_contains_credentials(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    app_dir = create_app_dir(tmp_path)
+    calls = []
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://private-user:private-password@db.example.com/swerve",
+    )
+    monkeypatch.setattr(db_manager_module, "Tortoise", fake_tortoise(calls))
+    db_manager_module._db_manager = None
+
+    run_lifespan(db_manager_module.database_lifespan(str(app_dir)))
+
+    output = capsys.readouterr().out
+    assert "postgresql (db.example.com/swerve)" in output
+    assert "private-user" not in output
+    assert "private-password" not in output
 
 
 def test_database_lifespan_closes_after_schema_startup_failure(
@@ -193,6 +285,8 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
     explorer_body = None
     logo_body = None
     openapi_document = None
+    live_status = None
+    ready_status = None
     output = ""
     try:
         deadline = time.monotonic() + 30
@@ -225,6 +319,16 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
             ) as response:
                 assert response.headers.get_content_type() == "image/png"
                 logo_body = response.read()
+            with urlopen(
+                f"http://127.0.0.1:{port}/health/live",
+                timeout=2,
+            ) as response:
+                live_status = json.loads(response.read().decode("utf-8"))
+            with urlopen(
+                f"http://127.0.0.1:{port}/health/ready",
+                timeout=2,
+            ) as response:
+                ready_status = json.loads(response.read().decode("utf-8"))
     finally:
         if process.poll() is None:
             process.send_signal(signal.SIGINT)
@@ -242,6 +346,8 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
     assert "Explore your API." in explorer_body
     assert "OpenAPI JSON" in explorer_body
     assert logo_body.startswith(b"\x89PNG\r\n\x1a\n")
+    assert live_status == {"status": "ok"}
+    assert ready_status == {"status": "ready"}
     assert openapi_document["openapi"] == "3.1.0"
     assert openapi_document["paths"]["/api"]["get"]["summary"] == (
         "Check the backend status."
@@ -260,6 +366,8 @@ def test_runtime_dependencies_support_starlette_lifespan_without_name_collision(
 
     assert "starlette>=0.47.3,<2" in dependencies
     assert "tortoise-orm>=1.1.8,<2" in dependencies
+    assert "asyncpg>=0.30.0,<1" in dependencies
+    assert "asyncmy>=0.2.10,<1" in dependencies
     assert not any(
         dependency.split("<", 1)[0].split(">", 1)[0] == "tortoise"
         for dependency in dependencies

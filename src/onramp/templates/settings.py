@@ -12,7 +12,9 @@ ENVIRONMENT = 'development'
 # migrations to prepare non-development databases.
 AUTO_GENERATE_SCHEMAS = True
 
-# Database Configuration
+# Database configuration. DATABASE_URL takes precedence when it is present in
+# the process environment, so production credentials never need to be stored in
+# this file. The structured values remain convenient local-development defaults.
 DATABASE = {
     'engine': 'sqlite',        # sqlite, postgresql, mysql
     'name': 'db.sqlite3',      # Database name (or path for SQLite)
@@ -21,6 +23,20 @@ DATABASE = {
     'user': '',                # Database user (ignored for SQLite)
     'password': '',            # Database password (ignored for SQLite)
 }
+
+# Optional connection-pool settings. Each value can also be overridden with an
+# ONRAMP_DATABASE_* environment variable; see the generated project README.
+DATABASE_OPTIONS = {
+    'min_size': 1,
+    'max_size': 5,
+    'connect_timeout': 10,
+    # 'ssl': True,
+}
+
+# HTTP deployment settings. Environment variables accept comma-separated lists.
+ALLOWED_HOSTS = ['*']
+CORS_ALLOWED_ORIGINS = []
+CORS_ALLOW_CREDENTIALS = False
 
 # For PostgreSQL:
 # DATABASE = {
@@ -42,4 +58,5 @@ DATABASE = {
 #     'password': 'mypassword',
 # }
 
-# Add more settings as needed
+# Add more non-secret settings as needed. Keep passwords, API keys, and signing
+# material in the deployment provider's secret environment.

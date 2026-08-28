@@ -2,6 +2,9 @@ import sys
 sys.dont_write_bytecode = True
 
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.routing import Route
 from starlette.responses import HTMLResponse, JSONResponse
 import os
@@ -13,7 +16,11 @@ from pathlib import Path
 from typing import List
 
 from onramp.api_explorer import api_explorer_html, build_openapi_document
-from onramp.db.manager import database_lifespan
+from onramp.db.manager import (
+    database_is_ready,
+    database_lifespan,
+    get_db_manager,
+)
 
 
 def sync(func):
@@ -340,6 +347,37 @@ class OnRamp:
             media_type="image/png",
             headers={"Cache-Control": "public, max-age=3600"},
         )
+
+    async def _liveness_response(self, _request):
+        return JSONResponse({"status": "ok"})
+
+    async def _readiness_response(self, _request):
+        ready = await database_is_ready()
+        return JSONResponse(
+            {"status": "ready" if ready else "unavailable"},
+            status_code=200 if ready else 503,
+        )
+
+    def _middleware(self):
+        manager = get_db_manager(self.app_dir)
+        middleware = [
+            Middleware(
+                TrustedHostMiddleware,
+                allowed_hosts=manager.allowed_hosts(),
+            )
+        ]
+        origins = manager.cors_allowed_origins()
+        if origins:
+            middleware.append(
+                Middleware(
+                    CORSMiddleware,
+                    allow_origins=origins,
+                    allow_credentials=manager.cors_allow_credentials(),
+                    allow_methods=["*"],
+                    allow_headers=["*"],
+                )
+            )
+        return middleware
     
     def create_app(self):
         """Create the Starlette application"""
@@ -349,6 +387,8 @@ class OnRamp:
             for operation in self.api_operations
         )
         explorer_routes = [
+            Route("/health/live", self._liveness_response, methods=["GET"]),
+            Route("/health/ready", self._readiness_response, methods=["GET"]),
             Route("/api/onramp-logo.png", self._brand_logo_response, methods=["GET"]),
             Route("/api/openapi.json", self._openapi_response, methods=["GET"]),
         ]
@@ -359,6 +399,7 @@ class OnRamp:
         return Starlette(
             routes=[*explorer_routes, *self.routes],
             lifespan=database_lifespan(self.app_dir),
+            middleware=self._middleware(),
         )
 
 

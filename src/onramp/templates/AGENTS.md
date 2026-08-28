@@ -16,6 +16,10 @@ tools working on __ONRAMP_APP_NAME__.
 - Database startup and shutdown use Starlette lifespan management.
 - Automatic schema generation is allowed only when `ENVIRONMENT` or
   `ONRAMP_ENVIRONMENT` is exactly `development`; deployments use migrations.
+- `DATABASE_URL` overrides the safe local database defaults. Never commit
+  database passwords, email credentials, signing keys, or provider secrets.
+- Production refuses SQLite unless `ONRAMP_ALLOW_PRODUCTION_SQLITE=true`
+  explicitly confirms intentional persistent storage.
 
 ## Commands
 
@@ -37,6 +41,16 @@ tools working on __ONRAMP_APP_NAME__.
 - `onramp upgrade --check` inspects migrations without mutation and reports
   whether the upgrade should be successful.
 - `onramp upgrade` backs up managed files and stops on user-modified conflicts.
+- `onramp migrate [name]` remains the development shortcut that creates and
+  applies a migration. `onramp db make`, `onramp db upgrade`, and
+  `onramp db check` expose the individual stages; only committed migrations are
+  applied outside development.
+- Aerich migration SQL is database-specific. Generate it against the same
+  engine used in production; deployment checks reject recognizable dialect
+  mismatches.
+- `onramp deploy init`, `onramp deploy check`, and `onramp deploy` prepare,
+  validate, build, and deploy the production container. `onramp start` is the
+  stable production ASGI entry point.
 
 ## Native behavior
 

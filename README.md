@@ -92,9 +92,68 @@ OnRamp manages database startup and shutdown through Starlette's lifespan API.
 New projects default to `ENVIRONMENT="development"` and
 `AUTO_GENERATE_SCHEMAS=True`, which creates missing tables for local
 development. Automatic schema creation is always disabled outside the
-`development` environment, even if the flag is left enabled. Set
-`ONRAMP_ENVIRONMENT=production` (or update `app/settings.py`) and apply Aerich
-migrations before starting a deployed backend.
+`development` environment, even if the flag is left enabled. `DATABASE_URL`
+takes precedence over `DATABASE` in `app/settings.py`, keeping production
+credentials out of source control. Structured settings and the
+`ONRAMP_DATABASE_*` variables can additionally configure pool size, connection
+timeout, and TLS. Production refuses the local SQLite fallback unless
+`ONRAMP_ALLOW_PRODUCTION_SQLITE=true` explicitly confirms that SQLite uses
+intentional persistent storage.
+
+Use the convenient combined migration command during development:
+
+```bash
+onramp migrate add_model_requests
+```
+
+For explicit stages, use `onramp db make [name]`, `onramp db upgrade`, and
+`onramp db check`. Migration generation is blocked outside development;
+deployments apply only committed migrations with `onramp db upgrade`.
+Aerich migration SQL is database-specific, so create migrations against the
+same engine used in production. New projects defer their initial migration
+until the first `onramp migrate` instead of prematurely binding it to SQLite;
+`onramp deploy check` rejects a recognizable SQLite/PostgreSQL/MySQL mismatch.
+
+OnRamp exposes `/health/live` for process health and `/health/ready` for a real
+database readiness check. Browser access can be constrained with
+`ONRAMP_ALLOWED_HOSTS` and `ONRAMP_CORS_ALLOWED_ORIGINS`.
+
+## Production deployment
+
+Prepare a portable production container and Render configuration:
+
+```bash
+onramp deploy init
+onramp deploy check
+onramp deploy
+```
+
+`onramp deploy init render` creates `Dockerfile`, `.dockerignore`,
+`.env.example`, `onramp.toml`, and `render.yaml` without overwriting existing
+files. `onramp deploy init container` creates only the provider-neutral files.
+The generated Render Blueprint provisions an always-on API and PostgreSQL,
+applies committed migrations before traffic changes, and checks
+`/health/ready`.
+
+`onramp deploy check` is read-only. It checks the production files, committed
+migrations and their database dialect, and common secret mistakes. `onramp
+deploy` then runs the project's configured test command (or a safe Python
+check), builds the same Docker image
+that can later run on AWS, validates `render.yaml`, and asks the Render CLI to
+deploy and wait for health. Set `ONRAMP_RENDER_SERVICE` or `render_service` in
+`onramp.toml` for non-interactive service selection.
+
+Every host starts the production process with:
+
+```bash
+onramp start
+```
+
+This command listens on `PORT` (or `ONRAMP_PORT`), honors `ONRAMP_HOST`,
+supports `ONRAMP_WORKERS`, and hands platform termination signals directly to
+Uvicorn for graceful shutdown. Secrets belong in the provider secret manager
+or an ignored local `.env` loaded by your shell or container tool, never in
+`app/settings.py` or `onramp.toml`.
 
 Run a native app from the project directory:
 
