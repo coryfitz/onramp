@@ -2,9 +2,12 @@
 Database connection and management for OnRamp
 """
 from contextlib import asynccontextmanager
+import ast
 import importlib.util
 import os
+from pathlib import Path
 import sys
+import warnings
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from tortoise import Tortoise
@@ -40,6 +43,36 @@ def _comma_separated(value) -> list[str]:
     else:
         values = value
     return [str(item).strip() for item in values if str(item).strip()]
+
+
+def _declares_model_class(path: str) -> bool:
+    """Return whether a model module contains any class declaration."""
+    try:
+        tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeError):
+        # Let Tortoise surface the real import or syntax error later.
+        return True
+    return any(isinstance(node, ast.ClassDef) for node in ast.walk(tree))
+
+
+def _uses_empty_model_fallback(config: dict) -> bool:
+    return (
+        config.get("apps", {}).get("models", {}).get("models")
+        == ["onramp.db.models"]
+    )
+
+
+@asynccontextmanager
+async def _empty_model_warning_filter(config: dict):
+    """Hide Tortoise's expected warning for an intentionally empty scaffold."""
+    with warnings.catch_warnings():
+        if _uses_empty_model_fallback(config):
+            warnings.filterwarnings(
+                "ignore",
+                message=r'Module "onramp\.db\.models" has no models',
+                category=RuntimeWarning,
+            )
+        yield
 
 class DatabaseManager:
     """Manages database connections and model discovery"""
@@ -385,13 +418,18 @@ class DatabaseManager:
         
         # Check for models.py file in models directory
         models_file = os.path.join(models_path, 'models.py')
-        if os.path.exists(models_file):
+        if os.path.exists(models_file) and _declares_model_class(models_file):
             model_modules.append('app.models.models')
         
         # Check for individual model files in models directory
         if os.path.exists(models_path):
             for filename in os.listdir(models_path):
-                if filename.endswith('.py') and not filename.startswith('__'):
+                model_path = os.path.join(models_path, filename)
+                if (
+                    filename.endswith('.py')
+                    and not filename.startswith('__')
+                    and _declares_model_class(model_path)
+                ):
                     module_name = filename[:-3]
                     if module_name != 'models':  # Don't duplicate models.models
                         model_modules.append(f'app.models.{module_name}')
@@ -453,10 +491,11 @@ async def init_db(app_dir: str = None):
     config = manager.get_tortoise_config()
     
     global _db_connection, _db_context, _db_initialized
-    _db_context = await Tortoise.init(
-        config,
-        _enable_global_fallback=True,
-    )
+    async with _empty_model_warning_filter(config):
+        _db_context = await Tortoise.init(
+            config,
+            _enable_global_fallback=True,
+        )
     _db_initialized = True
     _db_connection = _db_context.connections.get("default")
     print(f"Database initialized: {manager.database_description()}")
@@ -500,10 +539,12 @@ def database_lifespan(app_dir: str = None):
             # requests cannot inherit that context directly. Its documented
             # ASGI global fallback keeps the same isolated context visible to
             # request tasks for exactly the lifetime of this application.
-            _db_context = await Tortoise.init(
-                config=manager.get_tortoise_config(),
-                _enable_global_fallback=True,
-            )
+            config = manager.get_tortoise_config()
+            async with _empty_model_warning_filter(config):
+                _db_context = await Tortoise.init(
+                    config=config,
+                    _enable_global_fallback=True,
+                )
             initialized = True
             _db_initialized = True
             _db_connection = _db_context.connections.get("default")

@@ -327,6 +327,12 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
                 assert response.headers.get_content_type() == "image/png"
                 logo_body = response.read()
             with urlopen(
+                f"http://127.0.0.1:{port}/favicon.ico",
+                timeout=2,
+            ) as response:
+                assert response.headers.get_content_type() == "image/png"
+                favicon_body = response.read()
+            with urlopen(
                 f"http://127.0.0.1:{port}/health/live",
                 timeout=2,
             ) as response:
@@ -353,6 +359,7 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
     assert "Explore your API." in explorer_body
     assert "OpenAPI JSON" in explorer_body
     assert logo_body.startswith(b"\x89PNG\r\n\x1a\n")
+    assert favicon_body == logo_body
     assert live_status == {"status": "ok"}
     assert ready_status == {"status": "ready"}
     assert openapi_document["openapi"] == "3.1.0"
@@ -363,6 +370,7 @@ def test_uvicorn_starts_current_onramp_backend_with_database_lifespan(tmp_path):
     assert "Database connections closed" in output
     assert "Application startup complete" in output
     assert "AttributeError" not in output
+    assert "has no models" not in output
     assert (app_dir / "db" / "db.sqlite3").is_file()
 
 

@@ -415,6 +415,7 @@ class OnRamp:
         explorer_routes = [
             Route("/health/live", self._liveness_response, methods=["GET"]),
             Route("/health/ready", self._readiness_response, methods=["GET"]),
+            Route("/favicon.ico", self._brand_logo_response, methods=["GET"]),
             Route("/api/onramp-logo.png", self._brand_logo_response, methods=["GET"]),
             Route("/api/openapi.json", self._openapi_response, methods=["GET"]),
         ]

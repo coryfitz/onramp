@@ -73,3 +73,20 @@ def test_application_directory_is_not_added_as_top_level_import_root(
 
     assert str(tmp_path) in sys.path
     assert str(app_dir) not in sys.path
+
+
+def test_empty_generated_model_module_uses_quiet_framework_fallback(tmp_path):
+    app_dir = tmp_path / "app"
+    models_dir = app_dir / "models"
+    models_dir.mkdir(parents=True)
+    (app_dir / "settings.py").write_text(
+        "AUTH = {'enabled': False}\nDATABASE = {'engine': 'sqlite'}\n"
+    )
+    (models_dir / "models.py").write_text(
+        "from onramp.db import models\n\n"
+        "# Application-owned models belong here.\n"
+    )
+
+    assert DatabaseManager(str(app_dir)).discover_models() == [
+        "onramp.db.models"
+    ]
