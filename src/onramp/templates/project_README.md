@@ -26,7 +26,13 @@ onramp ios
 onramp android
 onramp mobile
 onramp doctor ios
+onramp test
 ```
+
+Use `--environment development`, `--environment staging`, or
+`--environment production` to select one backend, web, and native profile.
+Frontend profile URLs, display-name suffixes, and identifier suffixes live in
+`build/app.json`.
 
 `BACKEND` in `app/settings.py` controls whether frontend commands also start
 the Python server. The generated default is `False`; the backend scaffold is
@@ -53,6 +59,15 @@ SQL, so the same committed chain works with SQLite in development and
 PostgreSQL in production. Review any explicit `RunSQL` operation for backend
 portability.
 
+Set `AUTH['enabled'] = True` in `app/settings.py` to add OnRamp's explicit
+email-only signup/signin, revocable sessions, roles, deletion hooks, and
+verified notification subscriptions. Run `onramp migrate enable_accounts`
+after enabling it. Development verification messages go to the ignored
+`.onramp/dev-mail-outbox.jsonl`; staging and production need separate
+`ONRAMP_AUTH_SECRET`, `ONRAMP_IDENTITY_SECRET`, and `RESEND_API_KEY` values.
+Notification verification never creates an account. Manage classifications and
+roles with `onramp account classify` and `onramp account role`.
+
 Prepare and deploy the configured production targets with:
 
 ```bash
@@ -74,6 +89,8 @@ The first Render deployment requires a one-time connection of the generated
 `render.yaml` Blueprint in the Render dashboard. Set each target's
 `render_service`, or `ONRAMP_RENDER_BACKEND_SERVICE` and
 `ONRAMP_RENDER_WEB_SERVICE`, for noninteractive multi-service deployments.
+Environment-specific automation may instead use variables such as
+`ONRAMP_RENDER_STAGING_BACKEND_SERVICE`.
 Deployment topology belongs in `onramp.toml`; backend runtime behavior remains
 in `app/settings.py`, and secret values stay in the provider environment or an
 ignored local `.env` loaded by your shell or container tool.

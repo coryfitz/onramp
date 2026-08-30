@@ -12,6 +12,12 @@ dependencies = [
     "onramp~=__ONRAMP_VERSION__",
 ]
 
+[dependency-groups]
+dev = [
+    "httpx2>=2.12,<3",
+    "pytest>=8.3,<9",
+]
+
 [tool.setuptools.packages.find]
 include = ["app*"]
 

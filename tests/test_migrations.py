@@ -38,6 +38,18 @@ def migration_manager(app_dir: Path):
     return migrations_module.MigrationManager(str(app_dir))
 
 
+def test_generated_table_descriptions_cannot_inject_sql_delimiters(tmp_path):
+    migration = tmp_path / "0001_description.py"
+    migration.write_text(
+        "options={'table': 'sessions', 'table_description': "
+        "'Opaque session; only a digest is stored.'}\n"
+    )
+
+    assert migrations_module._sanitize_migration_descriptions(migration)
+    assert "session, only" in migration.read_text()
+    assert "session; only" not in migration.read_text()
+
+
 def test_native_migrations_create_and_update_sqlite_schema(tmp_path):
     app_dir = create_migration_project(tmp_path)
     manager = migration_manager(app_dir)

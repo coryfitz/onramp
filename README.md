@@ -117,6 +117,21 @@ OnRamp exposes `/health/live` for process health and `/health/ready` for a real
 database readiness check. Browser access can be constrained with
 `ONRAMP_ALLOWED_HOSTS` and `ONRAMP_CORS_ALLOWED_ORIGINS`.
 
+Backend routes can be nested: `app/api/account/index.py` maps to
+`/api/account`, while `app/api/items/[item_id].py` maps to
+`/api/items/{item_id}`. `onramp.api` supplies structured JSON errors, body
+validation, bearer-token parsing, and bounded pagination. `onramp test` runs
+the configured backend and frontend checks together.
+
+Set `AUTH['enabled'] = True` in `app/settings.py` to opt into passwordless,
+email-only accounts and generic verified notification subscriptions, then run
+`onramp migrate enable_accounts`. Built-in routes live under `/api/auth`,
+`/api/account`, and `/api/notifications/subscriptions`. Signup is always
+explicit; verifying a notification never creates an account. Codes and tokens
+are stored as digests, attempts are rate-limited, native sessions use secure
+storage, web can use HttpOnly cookies, and development mail goes to the ignored
+`.onramp/dev-mail-outbox.jsonl`. Resend is the default production provider.
+
 ## Production deployment
 
 Prepare the project's production targets and Render configuration:
@@ -126,6 +141,10 @@ onramp deploy init
 onramp deploy --check
 onramp deploy
 ```
+
+The same deployment flow supports `--environment staging` and
+`--environment production`. Environment-specific service IDs may use names
+such as `ONRAMP_RENDER_STAGING_BACKEND_SERVICE`.
 
 `onramp deploy init render` detects the Python backend and web frontend and
 records them as separate targets in `onramp.toml`. It creates the necessary
@@ -173,6 +192,10 @@ onramp ios
 onramp android
 onramp mobile
 ```
+
+Pass `--environment development|staging|production` to select the matching
+runtime/API profile from `build/app.json`. Development provides emulator-safe
+loopback defaults; staging conventionally uses `.beta` native identifiers.
 
 After the first successful native build, OnRamp reopens the installed app
 without recompiling when its native inputs are unchanged. JavaScript and
@@ -305,7 +328,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.26
+onramp upgrade --to 0.5.27
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -322,7 +345,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.26`. Patch releases remain compatible with that project schema;
+`onramp~=0.5.27`. Patch releases remain compatible with that project schema;
 minor releases may introduce a schema migration handled by `onramp upgrade`.
 
 

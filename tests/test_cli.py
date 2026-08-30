@@ -32,6 +32,43 @@ def test_find_next_available_port(monkeypatch):
     assert cli.find_next_available_port(8000) == 8002
 
 
+def test_runtime_environment_selection_is_shared_and_validated(monkeypatch):
+    monkeypatch.setenv("ONRAMP_ENVIRONMENT", "development")
+
+    assert cli._select_environment("staging") == "staging"
+    assert os.environ["ONRAMP_ENVIRONMENT"] == "staging"
+    with pytest.raises(ValueError, match="development, staging, or production"):
+        cli._select_environment("preview")
+
+
+def test_project_test_command_runs_configured_backend_and_frontend_checks(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "tests").mkdir()
+    build = tmp_path / "build"
+    build.mkdir()
+    (build / "package.json").write_text(
+        '{"scripts":{"typecheck":"tsc --noEmit","test":"jest",'
+        '"build:web":"webpack"}}\n'
+    )
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append((command, kwargs["cwd"], kwargs.get("env")))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(cli.subprocess, "run", run)
+    monkeypatch.setattr(cli, "ensure_node_env", lambda: {"NODE_ENV": "test"})
+
+    assert cli.run_project_tests(str(tmp_path))
+    assert commands == [
+        ([sys.executable, "-m", "pytest"], str(tmp_path), None),
+        (["npm", "run", "typecheck"], str(build), {"NODE_ENV": "test"}),
+        (["npm", "run", "test"], str(build), {"NODE_ENV": "test"}),
+        (["npm", "run", "build:web"], str(build), {"NODE_ENV": "test"}),
+    ]
+
+
 def test_api_browser_waits_for_backend_and_opens_default_route(monkeypatch):
     opened = []
 

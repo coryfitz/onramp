@@ -4,6 +4,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 BACKEND = False
 
+# Optional passwordless, email-only accounts and verified notification
+# subscriptions. Enabling this adds framework-owned models and API routes under
+# /api/auth, /api/account, and /api/notifications/subscriptions. Run
+# `onramp migrate enable_auth` after changing enabled to True.
+AUTH = {
+    'enabled': False,
+    'app_name': '__ONRAMP_APP_NAME__',
+    'email_from': '__ONRAMP_APP_NAME__ <accounts@example.com>',
+    'deletion_hooks': [],
+}
+
 # Runtime environment. ONRAMP_ENVIRONMENT can override this at launch.
 ENVIRONMENT = 'development'
 

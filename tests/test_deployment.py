@@ -184,6 +184,15 @@ def test_deploy_check_accepts_render_managed_database(tmp_path, capsys):
     assert "Render will inject DATABASE_URL" in output
 
 
+def test_deploy_check_accepts_explicit_staging_environment(tmp_path, capsys):
+    root = create_project(tmp_path)
+    deployment.initialize_deployment(root, "render")
+
+    assert deployment.check_deployment(root, environment_override="staging")
+
+    assert "environment: staging" in capsys.readouterr().out
+
+
 def test_deploy_check_reports_missing_render_blueprint(tmp_path, capsys):
     root = create_project(tmp_path)
     deployment.initialize_deployment(root, "render")
@@ -326,6 +335,54 @@ def test_both_targets_deploy_backend_before_web(tmp_path, monkeypatch):
         ),
         ("/usr/local/bin/render", "deploys", "create", "srv-web", "--wait"),
     ]
+
+
+def test_staging_deploy_uses_environment_services_and_restores_process_env(
+    tmp_path, monkeypatch
+):
+    root = create_project(tmp_path)
+    deployment.initialize_deployment(root, "render")
+    seen_environments = []
+    commands = []
+
+    monkeypatch.delenv("ONRAMP_ENVIRONMENT", raising=False)
+    monkeypatch.setenv("ONRAMP_RENDER_STAGING_BACKEND_SERVICE", "srv-staging")
+    monkeypatch.setattr(
+        deployment,
+        "_run_project_checks",
+        lambda *_args: seen_environments.append(
+            deployment.os.environ.get("ONRAMP_ENVIRONMENT")
+        )
+        or True,
+    )
+    monkeypatch.setattr(deployment, "_build_target_artifacts", lambda *_args: True)
+    monkeypatch.setattr(deployment, "_git_is_clean", lambda _root: True)
+    monkeypatch.setattr(
+        deployment.shutil,
+        "which",
+        lambda command: "/usr/local/bin/render" if command == "render" else None,
+    )
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(deployment.subprocess, "run", run)
+
+    assert deployment.deploy_project(
+        root,
+        environment_override="staging",
+        interactive=False,
+    )
+    assert seen_environments == ["staging"]
+    assert commands[-1] == [
+        "/usr/local/bin/render",
+        "deploys",
+        "create",
+        "srv-staging",
+        "--wait",
+    ]
+    assert "ONRAMP_ENVIRONMENT" not in deployment.os.environ
 
 
 def test_container_deploy_checks_and_builds_image(tmp_path, monkeypatch):

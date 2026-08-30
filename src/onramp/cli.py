@@ -3,7 +3,9 @@ import sys
 sys.dont_write_bytecode = True
 
 import argparse
+import asyncio
 import importlib
+import json
 import os
 import shutil
 import subprocess
@@ -246,7 +248,10 @@ def handle_deploy(args):
             print("Usage: 'onramp deploy [render|container] --check'")
             return 2
         provider = action if action in SUPPORTED_PROVIDERS else None
-        return 0 if check_deployment(PROJECT_ROOT, provider) else 1
+        arguments = {}
+        if args.environment:
+            arguments["environment_override"] = args.environment
+        return 0 if check_deployment(PROJECT_ROOT, provider, **arguments) else 1
     if action == "init":
         if len(extra) > 1:
             print("Usage: 'onramp deploy init [render|container]'")
@@ -257,19 +262,68 @@ def handle_deploy(args):
         if extra:
             print("Usage: 'onramp deploy --check'")
             return 2
-        return 0 if check_deployment(PROJECT_ROOT) else 1
+        arguments = {}
+        if args.environment:
+            arguments["environment_override"] = args.environment
+        return 0 if check_deployment(PROJECT_ROOT, **arguments) else 1
     if action in SUPPORTED_PROVIDERS:
         if extra:
             print("Usage: 'onramp deploy [render|container]'")
             return 2
-        return 0 if deploy_project(PROJECT_ROOT, action) else 1
+        arguments = {}
+        if args.environment:
+            arguments["environment_override"] = args.environment
+        return 0 if deploy_project(PROJECT_ROOT, action, **arguments) else 1
     if action is not None or extra:
         print(
             "Usage: 'onramp deploy [init [render|container] | check | "
             "render | container] [--check]'"
         )
         return 2
-    return 0 if deploy_project(PROJECT_ROOT) else 1
+    arguments = {}
+    if args.environment:
+        arguments["environment_override"] = args.environment
+    return 0 if deploy_project(PROJECT_ROOT, **arguments) else 1
+
+
+def run_project_tests(project_root=PROJECT_ROOT):
+    """Run every configured backend and frontend verification suite."""
+    successful = True
+    tests_dir = os.path.join(project_root, "tests")
+    if os.path.isdir(tests_dir):
+        print("Running backend tests...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest"],
+            cwd=project_root,
+            check=False,
+        )
+        successful = result.returncode == 0 and successful
+
+    package_path = os.path.join(project_root, "build", "package.json")
+    if os.path.isfile(package_path):
+        try:
+            with open(package_path, encoding="utf-8") as package_file:
+                scripts = dict(json.load(package_file).get("scripts", {}))
+        except (OSError, ValueError, TypeError):
+            print("Could not read build/package.json.")
+            return False
+        environment = ensure_node_env()
+        for script in ("typecheck", "test", "build:web"):
+            if script not in scripts:
+                continue
+            print(f"Running frontend {script}...")
+            result = subprocess.run(
+                ["npm", "run", script],
+                cwd=os.path.join(project_root, "build"),
+                env=environment,
+                check=False,
+            )
+            successful = result.returncode == 0 and successful
+
+    if not os.path.isdir(tests_dir) and not os.path.isfile(package_path):
+        print("No backend or frontend tests are configured.")
+        return False
+    return successful
 
 # -----------------------------------------------------------------------------
 # Framework config (from config.toml)
@@ -326,17 +380,33 @@ def find_next_available_port(starting_port=8000):
 # -----------------------------------------------------------------------------
 # Platform-specific runners
 # -----------------------------------------------------------------------------
-def run_web(with_backend=True, port=8000):
+def _select_environment(environment: str | None = None) -> str:
+    selected = str(
+        environment or os.environ.get("ONRAMP_ENVIRONMENT", "development")
+    ).strip().lower()
+    if selected not in {"development", "staging", "production"}:
+        raise ValueError(
+            "Environment must be development, staging, or production."
+        )
+    os.environ["ONRAMP_ENVIRONMENT"] = selected
+    return selected
+
+
+def run_web(with_backend=True, port=8000, environment: str | None = None):
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
         return False
 
+    selected_environment = _select_environment(environment)
     env = ensure_node_env()
+    env["ONRAMP_ENVIRONMENT"] = selected_environment
     if with_backend:
         backend_enabled = getattr(settings, 'BACKEND', True)
         if backend_enabled:
             print("Starting web frontend and backend...")
-            web_process = start_frontend("web", BUILD_DIR, env=env)
+            web_process = start_frontend(
+                "web", BUILD_DIR, env=env, environment=selected_environment
+            )
             if not web_process:
                 return False
             spawned_processes.append(web_process)
@@ -347,10 +417,14 @@ def run_web(with_backend=True, port=8000):
             )
         else:
             print("Backend disabled. Running web only...")
-            return run_frontend("web", BUILD_DIR, env=env)
+            return run_frontend(
+                "web", BUILD_DIR, env=env, environment=selected_environment
+            )
     else:
         print("Running web development server...")
-        return run_frontend("web", BUILD_DIR, env=env)
+        return run_frontend(
+            "web", BUILD_DIR, env=env, environment=selected_environment
+        )
 
 
 def run_ios(
@@ -358,13 +432,16 @@ def run_ios(
     metro_port: int | None = None,
     watch_diagnostics: bool = False,
     rebuild: bool = False,
+    environment: str | None = None,
 ):
     """Run iOS simulator; if BACKEND=True also start the backend dev server."""
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
         return False
 
+    selected_environment = _select_environment(environment)
     env = ensure_node_env()
+    env["ONRAMP_ENVIRONMENT"] = selected_environment
     project_name = os.path.basename(PROJECT_ROOT)
     backend_enabled = getattr(settings, "BACKEND", True)
     if backend_enabled:
@@ -377,6 +454,7 @@ def run_ios(
             metro_port=metro_port,
             watch_diagnostics=watch_diagnostics,
             rebuild=rebuild,
+            environment=selected_environment,
         )
         if not ios_process:
             return False
@@ -395,6 +473,7 @@ def run_ios(
             metro_port=metro_port,
             watch_diagnostics=watch_diagnostics,
             rebuild=rebuild,
+            environment=selected_environment,
         )
 
 
@@ -403,12 +482,15 @@ def run_android(
     metro_port: int | None = None,
     watch_diagnostics: bool = False,
     rebuild: bool = False,
+    environment: str | None = None,
 ):
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
         return False
 
+    selected_environment = _select_environment(environment)
     env = ensure_node_env()
+    env["ONRAMP_ENVIRONMENT"] = selected_environment
     project_name = os.path.basename(PROJECT_ROOT)
     backend_enabled = getattr(settings, "BACKEND", True)
     if backend_enabled:
@@ -421,6 +503,7 @@ def run_android(
             metro_port=metro_port,
             watch_diagnostics=watch_diagnostics,
             rebuild=rebuild,
+            environment=selected_environment,
         )
         if not android_process:
             return False
@@ -439,6 +522,7 @@ def run_android(
         metro_port=metro_port,
         watch_diagnostics=watch_diagnostics,
         rebuild=rebuild,
+        environment=selected_environment,
     )
 
 
@@ -447,13 +531,16 @@ def run_mobile(
     metro_port: int | None = None,
     watch_diagnostics: bool = False,
     rebuild: bool = False,
+    environment: str | None = None,
 ):
     """Run the iOS and Android apps with one shared backend process."""
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
         return False
 
+    selected_environment = _select_environment(environment)
     env = ensure_node_env()
+    env["ONRAMP_ENVIRONMENT"] = selected_environment
     project_name = os.path.basename(PROJECT_ROOT)
     backend_enabled = getattr(settings, "BACKEND", True)
     if backend_enabled:
@@ -466,6 +553,7 @@ def run_mobile(
             metro_port=metro_port,
             watch_diagnostics=watch_diagnostics,
             rebuild=rebuild,
+            environment=selected_environment,
         )
         if not mobile_process:
             return False
@@ -484,6 +572,7 @@ def run_mobile(
         metro_port=metro_port,
         watch_diagnostics=watch_diagnostics,
         rebuild=rebuild,
+        environment=selected_environment,
     )
 
 
@@ -701,16 +790,20 @@ def run_uvicorn_with_watch(
         cleanup_processes()
     return successful
 
-def run_command_logic(port=8000):
+def run_command_logic(port=8000, environment: str | None = None):
     if not os.path.exists(BUILD_DIR):
         print("No build directory found. Running backend only")
+        _select_environment(environment)
         return run_uvicorn_with_watch(port)
 
     try:
         backend_enabled = getattr(settings, 'BACKEND', True)
-        return run_web(with_backend=backend_enabled, port=port)
+        return run_web(
+            with_backend=backend_enabled, port=port, environment=environment
+        )
     except Exception as e:
         print(f"Error checking settings: {e}. Running backend only")
+        _select_environment(environment)
         return run_uvicorn_with_watch(port)
 
 # -----------------------------------------------------------------------------
@@ -820,6 +913,13 @@ def create_app_directory(name, api_only=False, directory_path=None):
 
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'settings.py',
                         os.path.join(backend_dir, 'settings.py'))
+        settings_path = os.path.join(backend_dir, 'settings.py')
+        with open(settings_path, encoding='utf-8') as settings_file:
+            settings_content = settings_file.read()
+        with open(settings_path, 'w', encoding='utf-8') as settings_file:
+            settings_file.write(
+                settings_content.replace('__ONRAMP_APP_NAME__', name)
+            )
 
         models_dir = os.path.join(backend_dir, 'models')
         os.makedirs(models_dir, exist_ok=True)
@@ -850,6 +950,13 @@ def create_app_directory(name, api_only=False, directory_path=None):
             f.write("# API package\n")
         shutil.copyfile(importlib.resources.files(TEMPLATES_MODULE) / 'index.py',
                         os.path.join(api_dir, 'index.py'))
+
+        tests_dir = os.path.join(directory_path, 'tests')
+        os.makedirs(tests_dir, exist_ok=True)
+        shutil.copyfile(
+            importlib.resources.files(TEMPLATES_MODULE) / 'test_api.py',
+            os.path.join(tests_dir, 'test_api.py'),
+        )
 
         print(f"{FRAMEWORK_NAME} {'API' if api_only else 'backend'} created")
 
@@ -1027,8 +1134,59 @@ def handle_del(args):
                 return res.returncode
         print(f"✓ Deleted {name}")
         return 0
-    except Exception as e:
-        print(f"Delete failed: {e}")
+    except Exception as error:
+        print(f"Delete failed: {error}")
+        return 1
+
+
+def handle_account(args):
+    """Manage framework account classifications without requiring an admin UI."""
+    classify_operation = args.name == "classify" and len(args.extra) == 2
+    role_operation = args.name == "role" and len(args.extra) == 3
+    if not classify_operation and not role_operation:
+        print(
+            "Usage: 'onramp account classify <email> "
+            "<regular|internal|tester>' or "
+            "'onramp account role <email> <add|remove> <role>'"
+        )
+        return 2
+
+    async def classify():
+        from tortoise import Tortoise
+
+        from onramp.auth.config import auth_enabled
+        from onramp.auth.service import classify_email, update_account_role
+        from onramp.db.manager import get_db_manager
+
+        manager = get_db_manager(APP_DIR)
+        if not auth_enabled(APP_DIR):
+            print("OnRamp accounts are not enabled in app/settings.py.")
+            return False
+        await Tortoise.init(config=manager.get_tortoise_config())
+        try:
+            if classify_operation:
+                email, audience_type = args.extra
+                normalized = await classify_email(email, audience_type)
+                print(f"{normalized} is classified as {audience_type}.")
+            else:
+                email, action, role = args.extra
+                if action not in {"add", "remove"}:
+                    raise ValueError("Role action must be add or remove.")
+                normalized, roles = await update_account_role(
+                    email, role, enabled=action == "add"
+                )
+                print(
+                    f"{normalized} roles: "
+                    + (", ".join(roles) if roles else "(none)")
+                )
+            return True
+        finally:
+            await Tortoise.close_connections()
+
+    try:
+        return 0 if asyncio.run(classify()) else 1
+    except (ValueError, RuntimeError) as error:
+        print(f"Could not classify account: {error}")
         return 1
 
 
@@ -1064,14 +1222,19 @@ def main():
   {FRAMEWORK_NAME.lower()} db make [name]
   {FRAMEWORK_NAME.lower()} db upgrade
   {FRAMEWORK_NAME.lower()} db check
+  {FRAMEWORK_NAME.lower()} account classify <email> <regular|internal|tester>
+  {FRAMEWORK_NAME.lower()} account role <email> <add|remove> <role>
   {FRAMEWORK_NAME.lower()} deploy init [render|container]
   {FRAMEWORK_NAME.lower()} deploy --check
   {FRAMEWORK_NAME.lower()} deploy [render|container]
+  {FRAMEWORK_NAME.lower()} test
   {FRAMEWORK_NAME.lower()} del <directory>
 
 The --port option controls the Python backend. --metro-port controls the
 React Native bundler. --watch-diagnostics prints source paths that trigger
 Fast Refresh. --rebuild forces native apps to rebuild and reinstall.
+Use --environment development, staging, or production to select one shared
+backend, web, and native runtime profile.
 repair:ios preserves Podfile.lock unless --fresh is set.
 upgrade creates recoverable backups and never overwrites modified managed files.
 """,
@@ -1084,6 +1247,12 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             "--host",
             default=None,
             help="Host interface for the production server",
+        )
+        parser.add_argument(
+            "--environment",
+            choices=["development", "staging", "production"],
+            default=None,
+            help="Select the shared app and backend runtime environment",
         )
         parser.add_argument(
             "--metro-port",
@@ -1174,9 +1343,15 @@ upgrade creates recoverable backups and never overwrites modified managed files.
 
         elif args.command == "run":
             if args.web_only:
-                return 0 if run_web(with_backend=False, port=args.port) else 1
+                return 0 if run_web(
+                    with_backend=False,
+                    port=args.port,
+                    environment=args.environment,
+                ) else 1
             else:
-                return 0 if run_command_logic(port=args.port) else 1
+                return 0 if run_command_logic(
+                    port=args.port, environment=args.environment
+                ) else 1
 
         elif args.command == "start":
             if args.name is not None or args.extra:
@@ -1186,31 +1361,39 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             return 0
 
         elif args.command == "ios":
-            return 0 if run_ios(
-                args.port,
-                metro_port=args.metro_port,
-                watch_diagnostics=args.watch_diagnostics,
-                rebuild=args.rebuild,
-            ) else 1
+            run_arguments = {
+                "metro_port": args.metro_port,
+                "watch_diagnostics": args.watch_diagnostics,
+                "rebuild": args.rebuild,
+            }
+            if args.environment:
+                run_arguments["environment"] = args.environment
+            return 0 if run_ios(args.port, **run_arguments) else 1
 
         elif args.command == "android":
-            return 0 if run_android(
-                args.port,
-                metro_port=args.metro_port,
-                watch_diagnostics=args.watch_diagnostics,
-                rebuild=args.rebuild,
-            ) else 1
+            run_arguments = {
+                "metro_port": args.metro_port,
+                "watch_diagnostics": args.watch_diagnostics,
+                "rebuild": args.rebuild,
+            }
+            if args.environment:
+                run_arguments["environment"] = args.environment
+            return 0 if run_android(args.port, **run_arguments) else 1
 
         elif args.command == "mobile":
-            return 0 if run_mobile(
-                args.port,
-                metro_port=args.metro_port,
-                watch_diagnostics=args.watch_diagnostics,
-                rebuild=args.rebuild,
-            ) else 1
+            run_arguments = {
+                "metro_port": args.metro_port,
+                "watch_diagnostics": args.watch_diagnostics,
+                "rebuild": args.rebuild,
+            }
+            if args.environment:
+                run_arguments["environment"] = args.environment
+            return 0 if run_mobile(args.port, **run_arguments) else 1
 
         elif args.command == "web":
-            return 0 if run_web(with_backend=False) else 1
+            return 0 if run_web(
+                with_backend=False, environment=args.environment
+            ) else 1
 
         elif args.command == "doctor":
             platform_name = args.name or "all"
@@ -1231,6 +1414,15 @@ upgrade creates recoverable backups and never overwrites modified managed files.
 
         elif args.command == "deploy":
             return handle_deploy(args)
+
+        elif args.command == "account":
+            return handle_account(args)
+
+        elif args.command == "test":
+            if args.name is not None or args.extra:
+                print("Usage: 'onramp test'")
+                return 2
+            return 0 if run_project_tests() else 1
         
         elif args.command == "repair:ios":
             return 0 if repair_ios(fresh=args.fresh) else 1

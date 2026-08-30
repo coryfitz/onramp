@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import re
+import ast
 import subprocess
 import sys
 from typing import Optional
@@ -17,6 +18,27 @@ TORTOISE_TOOL_SECTION = (
     "[tool.tortoise]\n"
     f'tortoise_orm = "{TORTOISE_CONFIG}"\n'
 )
+
+
+_TABLE_DESCRIPTION = re.compile(
+    r"('table_description'\s*:\s*)('(?:\\.|[^'\\])*')"
+)
+
+
+def _sanitize_migration_descriptions(path: Path) -> bool:
+    """Keep generated documentation from becoming executable SQL delimiters."""
+    content = path.read_text(encoding="utf-8")
+
+    def sanitize(match: re.Match) -> str:
+        description = ast.literal_eval(match.group(2))
+        safe = str(description).replace(";", ",")
+        return match.group(1) + repr(safe)
+
+    updated = _TABLE_DESCRIPTION.sub(sanitize, content)
+    if updated == content:
+        return False
+    path.write_text(updated, encoding="utf-8")
+    return True
 
 
 def _replace_legacy_tool_config(content: str) -> str:
@@ -154,7 +176,15 @@ version = "0.1.0"
         command = ["makemigrations"]
         if name:
             command.extend(["--name", name])
-        return self._run_tortoise_command(command)
+        before = set(self.migration_files())
+        if not self._run_tortoise_command(command):
+            return False
+        for migration_path in set(self.migration_files()) - before:
+            if _sanitize_migration_descriptions(migration_path):
+                print(
+                    f"Sanitized SQL-delimiter punctuation in {migration_path.name}"
+                )
+        return True
 
     def apply_migrations(self) -> bool:
         """Apply every pending portable migration."""

@@ -36,9 +36,6 @@ def create_app_dir(tmp_path, settings=""):
 
 
 def fake_tortoise(calls, generate_error=None):
-    async def init(config):
-        calls.append(("init", config))
-
     async def generate_schemas():
         calls.append(("generate", None))
         if generate_error:
@@ -47,9 +44,19 @@ def fake_tortoise(calls, generate_error=None):
     async def close_connections():
         calls.append(("close", None))
 
+    context = SimpleNamespace(
+        connections=SimpleNamespace(get=lambda _name: None),
+        generate_schemas=generate_schemas,
+        close_connections=close_connections,
+    )
+
+    async def init(config=None, **kwargs):
+        calls.append(("init", config))
+        assert kwargs == {"_enable_global_fallback": True}
+        return context
+
     return SimpleNamespace(
         init=init,
-        generate_schemas=generate_schemas,
         close_connections=close_connections,
     )
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from functools import wraps
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,22 @@ DEPLOY_CONFIG = Path("onramp.toml")
 DEPLOY_STATE = Path(".onramp/deploy-state.json")
 SUPPORTED_PROVIDERS = {"container", "render"}
 SUPPORTED_TARGET_KINDS = {"container", "static"}
+
+
+def _restore_runtime_environment(function):
+    """Keep deployment checks from leaking a selected environment to callers."""
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        previous = os.environ.get("ONRAMP_ENVIRONMENT")
+        try:
+            return function(*args, **kwargs)
+        finally:
+            if previous is None:
+                os.environ.pop("ONRAMP_ENVIRONMENT", None)
+            else:
+                os.environ["ONRAMP_ENVIRONMENT"] = previous
+
+    return wrapped
 
 
 def _slug(value: str) -> str:
@@ -535,6 +552,7 @@ def check_deployment(
     project_root: str | Path,
     provider_override: str | None = None,
     target_names: list[str] | None = None,
+    environment_override: str | None = None,
     *,
     interactive: bool | None = None,
 ) -> bool:
@@ -548,6 +566,9 @@ def check_deployment(
     provider = str(
         provider_override or config.get("provider", "container")
     ).lower()
+    environment = str(
+        environment_override or config.get("environment", "production")
+    ).strip().lower()
     targets = deployment_targets(root, config)
     if target_names is None:
         target_names = select_deployment_targets(
@@ -572,8 +593,8 @@ def check_deployment(
 
     if provider not in SUPPORTED_PROVIDERS:
         failures.append(f"unsupported provider '{provider}'")
-    if config.get("environment") != "production":
-        failures.append("[deploy].environment must be 'production'")
+    if environment not in {"staging", "production"}:
+        failures.append("deployment environment must be 'staging' or 'production'")
     if not (root / ".env.example").is_file():
         failures.append("missing .env.example")
     if provider == "render" and not (root / "render.yaml").is_file():
@@ -660,7 +681,7 @@ def check_deployment(
             notices.append("Render will inject DATABASE_URL from its managed database")
         else:
             notices.append(
-                "DATABASE_URL must be set in the production secret environment"
+                f"DATABASE_URL must be set in the {environment} secret environment"
             )
 
     if failures:
@@ -673,6 +694,7 @@ def check_deployment(
 
     print("Deployment check passed:")
     print(f"  ✓ provider: {provider}")
+    print(f"  ✓ environment: {environment}")
     print(
         "  ✓ targets: "
         + ", ".join(_target_label(name, selected[name]) for name in target_names)
@@ -861,10 +883,17 @@ def _render_service_for_target(
     name: str,
     target: dict,
     selected_count: int,
+    deployment_environment: str,
 ) -> str:
-    environment_name = re.sub(r"[^A-Za-z0-9]+", "_", name).upper()
+    target_name = re.sub(r"[^A-Za-z0-9]+", "_", name).upper()
+    environment_name = re.sub(
+        r"[^A-Za-z0-9]+", "_", deployment_environment
+    ).upper()
     service = str(
-        os.environ.get(f"ONRAMP_RENDER_{environment_name}_SERVICE")
+        os.environ.get(
+            f"ONRAMP_RENDER_{environment_name}_{target_name}_SERVICE"
+        )
+        or os.environ.get(f"ONRAMP_RENDER_{target_name}_SERVICE")
         or target.get("render_service")
         or ""
     ).strip()
@@ -872,16 +901,19 @@ def _render_service_for_target(
         return service
     if selected_count == 1:
         return str(
-            os.environ.get("ONRAMP_RENDER_SERVICE")
+            os.environ.get(f"ONRAMP_RENDER_{environment_name}_SERVICE")
+            or os.environ.get("ONRAMP_RENDER_SERVICE")
             or config.get("render_service")
             or ""
         ).strip()
     return ""
 
 
+@_restore_runtime_environment
 def deploy_project(
     project_root: str | Path,
     provider_override: str | None = None,
+    environment_override: str | None = None,
     *,
     interactive: bool | None = None,
 ) -> bool:
@@ -898,6 +930,10 @@ def deploy_project(
     provider = str(
         provider_override or config.get("provider", "container")
     ).lower()
+    deployment_environment = str(
+        environment_override or config.get("environment", "production")
+    ).strip().lower()
+    os.environ["ONRAMP_ENVIRONMENT"] = deployment_environment
     target_names = select_deployment_targets(
         root,
         config,
@@ -912,6 +948,7 @@ def deploy_project(
         root,
         provider_override=provider,
         target_names=target_names,
+        environment_override=deployment_environment,
         interactive=False,
     ):
         return False
@@ -961,6 +998,7 @@ def deploy_project(
             name,
             selected[name],
             len(selected),
+            deployment_environment,
         )
         for name in ordered_names
     }
@@ -969,6 +1007,10 @@ def deploy_project(
         if missing:
             variables = ", ".join(
                 "ONRAMP_RENDER_"
+                + re.sub(
+                    r"[^A-Za-z0-9]+", "_", deployment_environment
+                ).upper()
+                + "_"
                 + re.sub(r"[^A-Za-z0-9]+", "_", name).upper()
                 + "_SERVICE"
                 for name in missing

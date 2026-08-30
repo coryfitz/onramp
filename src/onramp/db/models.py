@@ -99,19 +99,6 @@ class Model(TortoiseModel, metaclass=OnRampModelMeta):
         await instance.save()
         return instance
     
-    @classmethod
-    async def get_or_create(cls, defaults=None, **kwargs):
-        """Get an existing instance or create a new one"""
-        try:
-            instance = await cls.get(**kwargs)
-            return instance, False
-        except cls.DoesNotExist:
-            create_kwargs = kwargs.copy()
-            if defaults:
-                create_kwargs.update(defaults)
-            instance = await cls.create(**create_kwargs)
-            return instance, True
-
 # Field types - wrap Tortoise fields with API
 class CharField(tortoise_fields.CharField):
     """Character field"""

@@ -26,6 +26,7 @@ build/dist/
 build/coverage/
 build/.DS_Store
 build/src/.DS_Store
+build/src/generated/runtime-config.json
 build/src/generated/routes.android.ts
 build/src/generated/routes.ios.ts
 build/src/generated/routes.web.ts
@@ -44,6 +45,7 @@ build/.metro-health-check*
 
 # Tooling
 .onramp/backups/
+.onramp/dev-mail-outbox.jsonl
 .onramp/deploy-state.json
 build/.onramp/backups/
 .idea/

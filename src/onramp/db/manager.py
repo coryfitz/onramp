@@ -85,6 +85,7 @@ class DatabaseManager:
                 'ALLOWED_HOSTS': ['*'],
                 'CORS_ALLOWED_ORIGINS': [],
                 'CORS_ALLOW_CREDENTIALS': False,
+                'AUTH': {'enabled': False},
             }
         
         # Import settings module
@@ -122,6 +123,7 @@ class DatabaseManager:
                 'CORS_ALLOW_CREDENTIALS',
                 False,
             ),
+            'AUTH': getattr(settings_module, 'AUTH', {'enabled': False}),
         }
 
     def environment(self):
@@ -372,10 +374,10 @@ class DatabaseManager:
         """Discover all model classes in the app"""
         models_path = os.path.join(self.app_dir, 'models')
         
-        # Add both the app directory and project root to Python path
+        # Import models through the real ``app`` package. Never add app/
+        # itself: doing so lets application modules shadow Python's standard
+        # library (for example, app/http.py can replace http.client).
         project_root = os.path.dirname(self.app_dir)
-        if self.app_dir not in sys.path:
-            sys.path.insert(0, self.app_dir)
         if project_root not in sys.path:
             sys.path.insert(0, project_root)
         
@@ -394,6 +396,14 @@ class DatabaseManager:
                     if module_name != 'models':  # Don't duplicate models.models
                         model_modules.append(f'app.models.{module_name}')
         
+        if bool(dict(self.settings.get('AUTH', {}) or {}).get('enabled')):
+            model_modules.extend(
+                [
+                    'onramp.auth.models',
+                    'onramp.notifications.models',
+                ]
+            )
+
         # Tortoise 1.x requires every configured app to name at least one
         # importable module, even before the project defines its first model.
         # Keeping the fallback inside OnRamp lets a newly enabled backend boot
@@ -419,6 +429,7 @@ class DatabaseManager:
 _db_manager = None
 _db_initialized = False
 _db_connection = None
+_db_context = None
 
 def get_db_manager(app_dir: str = None):
     """Get or create database manager instance"""
@@ -441,19 +452,25 @@ async def init_db(app_dir: str = None):
     manager.validate_runtime_configuration()
     config = manager.get_tortoise_config()
     
-    global _db_connection, _db_initialized
-    await Tortoise.init(config)
+    global _db_connection, _db_context, _db_initialized
+    _db_context = await Tortoise.init(
+        config,
+        _enable_global_fallback=True,
+    )
     _db_initialized = True
-    get_connection = getattr(Tortoise, "get_connection", None)
-    _db_connection = get_connection("default") if get_connection else None
+    _db_connection = _db_context.connections.get("default")
     print(f"Database initialized: {manager.database_description()}")
 
 async def close_db():
     """Close database connections"""
-    global _db_connection, _db_initialized
-    await Tortoise.close_connections()
+    global _db_connection, _db_context, _db_initialized
+    if _db_context is not None:
+        await _db_context.close_connections()
+    else:
+        await Tortoise.close_connections()
     _db_initialized = False
     _db_connection = None
+    _db_context = None
     print("Database connections closed")
 
 
@@ -474,24 +491,32 @@ def database_lifespan(app_dir: str = None):
 
     @asynccontextmanager
     async def lifespan(_app):
-        global _db_connection, _db_initialized
+        global _db_connection, _db_context, _db_initialized
         initialized = False
         try:
             manager.validate_runtime_configuration()
-            await Tortoise.init(config=manager.get_tortoise_config())
+            # Tortoise 1.x isolates ORM state in a context variable. Starlette
+            # runs lifespan and request handling in different async tasks, so
+            # requests cannot inherit that context directly. Its documented
+            # ASGI global fallback keeps the same isolated context visible to
+            # request tasks for exactly the lifetime of this application.
+            _db_context = await Tortoise.init(
+                config=manager.get_tortoise_config(),
+                _enable_global_fallback=True,
+            )
             initialized = True
             _db_initialized = True
-            get_connection = getattr(Tortoise, "get_connection", None)
-            _db_connection = get_connection("default") if get_connection else None
+            _db_connection = _db_context.connections.get("default")
             if manager.should_generate_schemas():
-                await Tortoise.generate_schemas()
+                await _db_context.generate_schemas()
             print(f"Database initialized: {manager.database_description()}")
             yield
         finally:
             if initialized:
-                await Tortoise.close_connections()
+                await _db_context.close_connections()
                 _db_initialized = False
                 _db_connection = None
+                _db_context = None
                 print("Database connections closed")
 
     return lifespan

@@ -15,6 +15,7 @@ from functools import wraps
 from pathlib import Path
 from typing import List
 
+from onramp.api import APIError, api_exception_handler
 from onramp.api_explorer import api_explorer_html, build_openapi_document
 from onramp.db.manager import (
     database_is_ready,
@@ -85,17 +86,27 @@ class OnRamp:
             print(f"App directory: {self.app_dir}")
             return
         
-        # Add the app directory to Python path so we can import modules
-        if self.app_dir not in sys.path:
-            sys.path.insert(0, self.app_dir)
+        # Import application modules through the real ``app`` package. Adding
+        # app/ itself would make files such as app/http.py shadow Python's
+        # standard-library http package.
+        project_root = os.path.dirname(os.path.abspath(self.app_dir))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
         
-        filenames = sorted(
-            os.listdir(api_dir),
-            key=lambda filename: (filename != "index.py", filename),
+        route_files = [
+            path
+            for path in Path(api_dir).rglob("*.py")
+            if not any(part.startswith("__") for part in path.relative_to(api_dir).parts)
+        ]
+        route_files.sort(
+            key=lambda path: (
+                path.relative_to(api_dir).parts != ("index.py",),
+                "[" in path.relative_to(api_dir).as_posix(),
+                path.relative_to(api_dir).as_posix(),
+            )
         )
-        for filename in filenames:
-            if filename.endswith('.py') and not filename.startswith('__'):
-                self._load_route_file(filename, api_dir)
+        for route_file in route_files:
+            self._load_route_file(route_file.relative_to(api_dir), api_dir)
     
     def _convert_response(self, result):
         """Convert Python returns to appropriate HTTP responses (Flask-style)"""
@@ -184,14 +195,18 @@ class OnRamp:
             return self._convert_response(result)
         return default_async_wrapper
     
-    def _load_route_file(self, filename, api_dir):
+    def _load_route_file(self, relative_path, api_dir):
         """Load a single route file and register its handlers"""
-        module_name = filename[:-3]  # Remove .py extension
-        file_path = os.path.join(api_dir, filename)
+        relative_path = Path(relative_path)
+        module_parts = list(relative_path.with_suffix("").parts)
+        module_name = "/".join(module_parts)
+        file_path = os.path.join(api_dir, *relative_path.parts)
+        display_path = relative_path.as_posix()
         
         try:
             # Create a unique module name to avoid conflicts
-            unique_module_name = f"api_{module_name}_{id(self)}"
+            safe_module_name = "_".join(module_parts)
+            unique_module_name = f"api_{safe_module_name}_{id(self)}"
             
             # Dynamically import the module
             spec = importlib.util.spec_from_file_location(unique_module_name, file_path)
@@ -212,17 +227,16 @@ class OnRamp:
                     del sys.modules[unique_module_name]
                 raise e
             
-            # Determine the route path from filename with /api prefix
-            if module_name == 'index':
-                route_path = "/api"
-            else:
-                route_path = f"/api/{module_name}"
-            
-            # Check for dynamic route (contains brackets)
-            if '[' in module_name and ']' in module_name:
-                # Convert [id] to {id} for Starlette path parameters
-                route_path = module_name.replace('[', '{').replace(']', '}')
-                route_path = f"/api/{route_path}"
+            # A nested index maps to its directory. Bracketed file or directory
+            # segments become Starlette path parameters.
+            route_parts = module_parts[:-1] if module_parts[-1] == "index" else module_parts
+            route_parts = [
+                part.replace("[", "{").replace("]", "}")
+                for part in route_parts
+            ]
+            route_path = "/api"
+            if route_parts:
+                route_path += "/" + "/".join(route_parts)
             
             # Find HTTP method handlers in the module
             supported_methods = []
@@ -286,21 +300,19 @@ class OnRamp:
                     else:
                         handler_info.append(f"{method}(auto-async)")
                 
-                print(f"Registered route: {route_path} -> {filename} [{', '.join(handler_info)}]")
+                print(f"Registered route: {route_path} -> {display_path} [{', '.join(handler_info)}]")
             else:
-                print(f"Warning: No HTTP method handlers found in {filename}")
+                print(f"Warning: No HTTP method handlers found in {display_path}")
                 
         except Exception as e:
-            print(f"Error loading route from {filename}: {e}")
+            print(f"Error loading route from {display_path}: {e}")
             import traceback
             traceback.print_exc()
 
     def _describe_operation(self, path, method, module_name, handler):
         """Create API explorer metadata for a discovered route handler."""
         docstring = inspect.getdoc(handler) or ""
-        route_name = (
-            "API root" if module_name == "index" else self._humanize(module_name)
-        )
+        route_name = "API root" if module_name == "index" else self._humanize(module_name)
         summary = (
             docstring.splitlines()[0]
             if docstring
@@ -314,7 +326,11 @@ class OnRamp:
         return {
             "path": path,
             "method": method,
-            "tag": "default" if module_name == "index" else self._humanize(module_name),
+            "tag": (
+                "default"
+                if module_name == "index"
+                else self._humanize(module_name.split("/", 1)[0])
+            ),
             "summary": summary,
             "description": description,
             "operation_id": f"{method.lower()}_{safe_name or 'route'}",
@@ -322,7 +338,13 @@ class OnRamp:
 
     @staticmethod
     def _humanize(value):
-        return value.replace("_", " ").replace("-", " ").strip().title()
+        return (
+            value.replace("/", " ")
+            .replace("_", " ")
+            .replace("-", " ")
+            .strip()
+            .title()
+        )
 
     @staticmethod
     def _wants_api_explorer(request):
@@ -382,6 +404,10 @@ class OnRamp:
     def create_app(self):
         """Create the Starlette application"""
         self.discover_file_routes()
+        from onramp.auth.config import auth_enabled
+        from onramp.auth.routes import auth_routes
+
+        built_in_routes = auth_routes(self.app_dir) if auth_enabled(self.app_dir) else []
         has_api_get = any(
             operation["path"] == "/api" and operation["method"] == "GET"
             for operation in self.api_operations
@@ -397,9 +423,10 @@ class OnRamp:
                 Route("/api", self._api_explorer_response, methods=["GET"])
             )
         return Starlette(
-            routes=[*explorer_routes, *self.routes],
+            routes=[*explorer_routes, *built_in_routes, *self.routes],
             lifespan=database_lifespan(self.app_dir),
             middleware=self._middleware(),
+            exception_handlers={APIError: api_exception_handler},
         )
 
 
