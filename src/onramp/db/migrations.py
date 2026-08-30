@@ -158,6 +158,11 @@ version = "0.1.0"
             return True
         if not self.create_migration("initial"):
             return False
+        if not self.migration_files():
+            print(
+                "No models require migrations yet; migration setup is ready."
+            )
+            return True
         if not self.apply_migrations():
             return False
         print("Portable migration system initialized")

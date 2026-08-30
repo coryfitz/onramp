@@ -86,6 +86,33 @@ def test_native_migrations_create_and_update_sqlite_schema(tmp_path):
     assert "ops.AddField" in manager.migration_files()[-1].read_text()
 
 
+def test_initializing_an_empty_project_waits_for_its_first_model(tmp_path, capsys):
+    app_dir = tmp_path / "app"
+    models_dir = app_dir / "models"
+    models_dir.mkdir(parents=True)
+    (app_dir / "__init__.py").write_text("")
+    (models_dir / "__init__.py").write_text("")
+    (models_dir / "models.py").write_text(
+        "from onramp.db import models\n\n"
+        "# Application models will be added here.\n"
+    )
+    (app_dir / "settings.py").write_text(
+        "ENVIRONMENT = 'development'\n"
+        "AUTH = {'enabled': False}\n"
+        "AUTO_GENERATE_SCHEMAS = False\n"
+        "DATABASE = {'engine': 'sqlite', 'name': 'db.sqlite3'}\n"
+    )
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'empty-migration-test'\nversion = '0.1.0'\n"
+    )
+
+    manager = migration_manager(app_dir)
+
+    assert manager.init_migrations()
+    assert manager.migration_files() == []
+    assert "migration setup is ready" in capsys.readouterr().out
+
+
 @pytest.mark.skipif(
     not os.environ.get("ONRAMP_TEST_POSTGRES_URL"),
     reason="ONRAMP_TEST_POSTGRES_URL is not configured",
