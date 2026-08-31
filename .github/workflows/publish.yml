@@ -154,7 +154,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "22"
           package-manager-cache: false
 
       - name: Wait for the version to become installable
@@ -182,6 +182,7 @@ jobs:
           cd "${RUNNER_TEMP}"
           onramp new onramp-public-smoke
           cd "${app_dir}/build"
+          npm audit
           npm test
           npm run typecheck
           npm run build:web

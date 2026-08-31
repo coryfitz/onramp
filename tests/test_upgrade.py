@@ -36,8 +36,8 @@ def test_plans_legacy_project_as_schema_one_without_overwriting_user_files(
     plan = upgrade.plan_project_upgrade(root, CURRENT_VERSION)
 
     assert plan.from_schema == 0
-    assert plan.to_schema == 3
-    assert len(plan.migrations) == 3
+    assert plan.to_schema == 4
+    assert len(plan.migrations) == 4
     assert plan.conflicts == []
     assert not any(change.relative_path == "AGENTS.md" for change in plan.changes)
     pyproject_change = next(
@@ -56,7 +56,7 @@ def test_applies_api_project_upgrade_with_manifest_and_backup(tmp_path):
     assert backup.is_dir()
     assert (backup / "pyproject.toml").is_file()
     assert (root / PROJECT_MANIFEST).is_file()
-    assert read_project_manifest(root)["schema_version"] == 3
+    assert read_project_manifest(root)["schema_version"] == 4
     assert CURRENT_REQUIREMENT in (root / "pyproject.toml").read_text()
 
 
@@ -93,6 +93,34 @@ def test_upgrade_adds_all_generated_native_and_route_ignores(tmp_path):
     assert "build/android/.kotlin/" in gitignore
     assert "build/android/app/.cxx/" in gitignore
     assert "build/.metro-health-check*" in gitignore
+
+
+def test_upgrade_migrates_framework_netlify_node_version(tmp_path):
+    root = create_legacy_project(tmp_path)
+    (root / "netlify.toml").write_text(
+        '[build]\nbase = "build"\n\n[build.environment]\n'
+        'NODE_VERSION = "20.19.4"\n'
+    )
+
+    plan = upgrade.plan_project_upgrade(root, CURRENT_VERSION)
+
+    assert plan.conflicts == []
+    netlify = next(
+        change for change in plan.changes
+        if change.relative_path == "netlify.toml"
+    )
+    assert 'NODE_VERSION = "22.15.0"' in netlify.content
+
+
+def test_upgrade_rejects_custom_incompatible_netlify_node_version(tmp_path):
+    root = create_legacy_project(tmp_path)
+    (root / "netlify.toml").write_text(
+        '[build.environment]\nNODE_VERSION = "21.7.0"\n'
+    )
+
+    plan = upgrade.plan_project_upgrade(root, CURRENT_VERSION)
+
+    assert any("netlify.toml" in conflict for conflict in plan.conflicts)
 
 
 def test_frontend_preflight_prevents_root_mutation(tmp_path, monkeypatch, capsys):
@@ -140,7 +168,7 @@ def test_up_to_date_root_does_not_create_an_empty_backup(tmp_path, monkeypatch):
     (root / "AGENTS.md").write_text(target_managed_files(root)["AGENTS.md"])
     (root / "build" / ".onramp").mkdir()
     (root / "build" / ".onramp" / "project.json").write_text(
-        '{"schemaVersion": 2}\n'
+        '{"schemaVersion": 3}\n'
     )
     write_project_manifest(root)
     calls = []

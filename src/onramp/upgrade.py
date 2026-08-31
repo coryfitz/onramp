@@ -54,7 +54,11 @@ PROJECT_MIGRATIONS = {
     0: "adopt compatible dependencies, backups, and versioned project metadata",
     1: "ignore generated native and platform-specific route output",
     2: "replace Aerich with portable Tortoise ORM migrations",
+    3: "upgrade frontend deployment environments to the secure Node 22 toolchain",
 }
+
+NODE_VERSION = "22.15.0"
+LEGACY_NODE_VERSIONS = {"20.19.4"}
 
 
 def project_migration_steps(from_schema: int, to_schema: int) -> list[dict]:
@@ -145,6 +149,26 @@ def _updated_gitignore(content: str) -> str:
     return content + "\n# OnRamp generated and recoverable output\n" + "\n".join(missing) + "\n"
 
 
+def _updated_netlify(content: str) -> str | None:
+    pattern = re.compile(
+        r'^(?P<prefix>\s*NODE_VERSION\s*=\s*["\'])(?P<version>[^"\']+)(?P<suffix>["\']\s*)$',
+        re.MULTILINE,
+    )
+    match = pattern.search(content)
+    if not match:
+        return None
+    current = match.group("version")
+    if current == NODE_VERSION:
+        return content
+    if current not in LEGACY_NODE_VERSIONS:
+        return None
+    return pattern.sub(
+        rf'\g<prefix>{NODE_VERSION}\g<suffix>',
+        content,
+        count=1,
+    )
+
+
 def plan_project_upgrade(
     project_root: str | Path,
     target_version: str | None = None,
@@ -211,6 +235,24 @@ def plan_project_upgrade(
                 "ignore recoverable upgrade backups",
             )
         )
+
+    netlify_path = root / "netlify.toml"
+    if netlify_path.is_file():
+        current_netlify = netlify_path.read_text(encoding="utf-8")
+        updated_netlify = _updated_netlify(current_netlify)
+        if updated_netlify is None:
+            plan.conflicts.append(
+                "netlify.toml does not contain the framework-managed Node version; "
+                f"set build.environment.NODE_VERSION to {NODE_VERSION}."
+            )
+        elif updated_netlify != current_netlify:
+            plan.changes.append(
+                FileChange(
+                    "netlify.toml",
+                    updated_netlify,
+                    f"use the secure Node {NODE_VERSION} frontend toolchain",
+                )
+            )
 
     targets = target_managed_files(root)
     for relative_path, target_content in targets.items():

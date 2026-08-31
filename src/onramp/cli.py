@@ -53,7 +53,7 @@ APP_DIR = os.path.join(PROJECT_ROOT, 'app')
 BUILD_DIR = os.path.join(PROJECT_ROOT, 'build')
 SETTINGS_PATH = os.path.join(APP_DIR, 'settings.py')
 
-MIN_NODE = "20.19.4"  # keep your RN minimum here
+MIN_NODE = "22.15.0"  # keep your RN and webpack minimum here
 
 def _semver_tuple(s: str):
     m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", s.strip())
@@ -66,7 +66,7 @@ def _current_node_version():
     except Exception:
         return (0, 0, 0)
 
-def ensure_node_env(min_required: str = MIN_NODE, track_major: str = "20"):
+def ensure_node_env(min_required: str = MIN_NODE, track_major: str = "22"):
     """
     Guarantee Node >= min_required and prefer the latest track_major.x via nvm.
     Returns an env dict with PATH pointing to the selected node/npm so all
@@ -823,7 +823,7 @@ command = "npm ci && npm run build:web"
 publish = "dist"
 
 [build.environment]
-NODE_VERSION = "20.19.4"
+NODE_VERSION = "22.15.0"
 
 [[redirects]]
 from = "/*"
