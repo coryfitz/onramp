@@ -22,13 +22,62 @@ def test_installed_python_package_uses_current_published_frontend(monkeypatch):
         "_frontend_package_version",
         lambda: "9.8.7",
     )
+    monkeypatch.setattr(
+        frontend,
+        "_frontend_exec_prefix",
+        lambda: Path("/isolated/onramp-npm-exec"),
+    )
 
     assert frontend._frontend_command(["--version"]) == [
-        "npx",
+        "npm",
+        "exec",
         "--yes",
+        "--prefix",
+        "/isolated/onramp-npm-exec",
+        "--package",
         "onramp-js@9.8.7",
+        "--",
+        "onramp-js",
         "--version",
     ]
+
+
+def test_installed_frontend_command_isolated_from_project_dependencies(
+    tmp_path,
+    monkeypatch,
+):
+    project = tmp_path / "project"
+    project_local_bin = project / "node_modules" / ".bin" / "onramp-js"
+    project_local_bin.parent.mkdir(parents=True)
+    project_local_bin.write_text("old project-local frontend\n")
+    isolated_prefix = tmp_path / "isolated-prefix"
+
+    monkeypatch.setattr(
+        frontend,
+        "_local_frontend_bin",
+        lambda: Path("/missing/onramp-js.js"),
+    )
+    monkeypatch.setattr(
+        frontend,
+        "_frontend_package_version",
+        lambda: "9.8.7",
+    )
+    monkeypatch.setattr(
+        frontend,
+        "_frontend_exec_prefix",
+        lambda: isolated_prefix,
+    )
+
+    command = frontend._frontend_command(["upgrade", "--output", str(project)])
+
+    assert str(project_local_bin) not in command
+    assert command[3:7] == [
+        "--prefix",
+        str(isolated_prefix),
+        "--package",
+        "onramp-js@9.8.7",
+    ]
+    assert command[7:10] == ["--", "onramp-js", "upgrade"]
 
 
 def test_run_frontend_forwards_metro_port(tmp_path, monkeypatch):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 from typing import Mapping
 
 import tomllib
@@ -22,13 +23,31 @@ def _local_frontend_bin() -> Path:
     return repository_root / "onramp-js" / "bin" / "onramp-js.js"
 
 
+def _frontend_exec_prefix() -> Path:
+    """Return an npm prefix isolated from every generated app."""
+    prefix = Path(tempfile.gettempdir()) / "onramp-npm-exec"
+    prefix.mkdir(parents=True, exist_ok=True)
+    return prefix
+
+
 def _frontend_command(arguments: list[str]) -> list[str]:
     local_bin = _local_frontend_bin()
     if local_bin.is_file():
         return ["node", str(local_bin), *arguments]
 
     package = f"onramp-js@{_frontend_package_version()}"
-    return ["npx", "--yes", package, *arguments]
+    return [
+        "npm",
+        "exec",
+        "--yes",
+        "--prefix",
+        str(_frontend_exec_prefix()),
+        "--package",
+        package,
+        "--",
+        "onramp-js",
+        *arguments,
+    ]
 
 
 def _frontend_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -52,7 +71,7 @@ def _run_frontend_command(
             check=True,
         )
         return True
-    except FileNotFoundError as error:
+    except OSError as error:
         print(f"Could not start the frontend generator: {error}")
     except subprocess.CalledProcessError as error:
         print(f"Frontend {action} failed with exit code {error.returncode}.")
