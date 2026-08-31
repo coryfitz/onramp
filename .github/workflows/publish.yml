@@ -180,7 +180,9 @@ jobs:
         run: |
           app_dir="${RUNNER_TEMP}/onramp-public-smoke"
           cd "${RUNNER_TEMP}"
-          onramp new onramp-public-smoke
+          onramp new onramp-public-smoke --mobile
+          test -d "${app_dir}/build/ios"
+          test -d "${app_dir}/build/android"
           cd "${app_dir}/build"
           npm audit
           npm test
