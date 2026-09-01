@@ -64,6 +64,13 @@ change.
   `@stylexjs/stylex` in universal code; direct StyleX output is web-only and
   React Strict DOM's native renderer discards it. Direct StyleX imports belong
   only in explicitly web-only `.web.*` modules.
+- Put flexbox sizing and alignment on a layout element such as `html.div`.
+  `html.span` becomes React Native `Text`, where `alignItems` and
+  `justifyContent` do not center the element's own glyph. Centered badges need
+  a layout container with a nested text-bearing element.
+- Do not rely on CSS text inheritance through `html.div`: native `View`
+  boundaries do not inherit typography, so keep box and layout styles on the
+  div and put color, font, and text alignment on its nested text element.
 - Preserve the web Babel plugin order: the React Strict DOM transform, then
   StyleX, then the cleanup that removes only an unreferenced compiled
   React Strict DOM `css` import. The cleanup must remain web-only.

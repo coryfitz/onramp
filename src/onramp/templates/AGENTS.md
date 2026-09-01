@@ -75,6 +75,13 @@ tools working on __ONRAMP_APP_NAME__.
 - Routes come from files under `build/app/`. The deterministic fallback is
   `build/src/generated/routes.ts`; Metro and Webpack use ignored platform
   siblings so concurrent iOS and Android runs cannot overwrite one another.
+- In universal route markup, put flexbox sizing and alignment on `html.div`
+  and render its text in a nested `html.span`. A span maps to native `Text`, so
+  `alignItems` and `justifyContent` do not center its own glyph on iOS or
+  Android.
+- Do not rely on CSS text inheritance through `html.div`: native `View`
+  boundaries do not inherit typography, so keep box and layout styles on the
+  div and put color, font, and text alignment on its nested text element.
 - File discovery and matching stay identical across targets. Web route modules
   may be split dynamically, while native route registries eagerly import them
   to avoid Metro development-bundle Fast Refresh loops.
