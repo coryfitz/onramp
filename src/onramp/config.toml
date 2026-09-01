@@ -1,6 +1,6 @@
 framework_name = "OnRamp"
 github_url = "https://github.com/coryfitz/onramp"
-onramp_js_version = "0.5.26"
+onramp_js_version = "0.5.27"
 project_schema_version = 4
 frontend_schema_version = 3
 react_native_version = "0.86.3"

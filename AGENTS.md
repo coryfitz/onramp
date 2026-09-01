@@ -130,6 +130,14 @@ change.
   as distinct values. Debug `applicationIdSuffix` values must be included when
   checking, caching, and launching an installed app, while the activity class
   remains resolved from its namespace.
+- Every Android launch must try to foreground the exact selected AVD on each
+  supported desktop, including reused and cold-started emulators and cached or
+  rebuilt apps. Resolve the host process from the selected emulator serial;
+  never guess by process name or an unverified window title. Preserve that
+  exact serial through coordinated launch stages, and return Android to the
+  front after iOS opens on macOS. Windows focus refusal and generic Wayland
+  focus restrictions remain nonfatal, must not be reported as guaranteed
+  activation, and must provide accurate taskbar or task-switcher guidance.
 - Native navigation to the initial route is a stack reset. Generated Home
   controls, including error screens, must work without browser globals.
 - Bind iOS simulators to Metro through numeric IPv4 loopback. Avoid
