@@ -57,6 +57,21 @@ project without `.onramp/project.toml`. Upgrade checks must not mutate either
 tree, and a modified managed file must stop the upgrade before other files
 change.
 
+## Universal frontend styling invariants
+
+- Shared modules that can render on web or native must import `css` and `html`
+  from `react-strict-dom`. Never import `css` directly from
+  `@stylexjs/stylex` in universal code; direct StyleX output is web-only and
+  React Strict DOM's native renderer discards it. Direct StyleX imports belong
+  only in explicitly web-only `.web.*` modules.
+- Preserve the web Babel plugin order: the React Strict DOM transform, then
+  StyleX, then the cleanup that removes only an unreferenced compiled
+  React Strict DOM `css` import. The cleanup must remain web-only.
+- When changing React Strict DOM, StyleX, Babel, or shared starter styles, run
+  the `onramp-js` suite and test a freshly packed generated project. Its native
+  tests must assert resolved style values on both starter routes; also run
+  typechecking and a production web build with warnings treated as failures.
+
 ## Deployment invariants
 
 - Keep `onramp deploy` as the single interactive deployment entry point. When
@@ -111,6 +126,10 @@ change.
   low-resolution AVDs, ask before creating a sharper replacement, preserve the
   old AVD and installed system image, prefer the sharper matching device, and
   explicitly install and launch the app on that device when others are online.
+- Treat Android's namespace, base application ID, and variant application ID
+  as distinct values. Debug `applicationIdSuffix` values must be included when
+  checking, caching, and launching an installed app, while the activity class
+  remains resolved from its namespace.
 - Native navigation to the initial route is a stack reset. Generated Home
   controls, including error screens, must work without browser globals.
 - Bind iOS simulators to Metro through numeric IPv4 loopback. Avoid
