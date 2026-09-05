@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from onramp import upgrade
+from onramp.frontend import FrontendUpgradeCheck
 from onramp.project import (
     PROJECT_MANIFEST,
     read_project_manifest,
@@ -26,6 +27,21 @@ def create_legacy_project(tmp_path: Path, with_frontend: bool = False) -> Path:
     (tmp_path / ".gitignore").write_text(".venv/\n")
     (tmp_path / "AGENTS.md").write_text("custom legacy instructions\n")
     return tmp_path
+
+
+def make_project_current(root: Path) -> None:
+    plan = upgrade.plan_project_upgrade(root, CURRENT_VERSION)
+    for change in plan.changes:
+        (root / change.relative_path).write_text(change.content)
+    (root / PROJECT_MANIFEST).parent.mkdir(exist_ok=True)
+    (root / PROJECT_MANIFEST).write_text(plan.manifest_content)
+
+
+def project_snapshot(root: Path) -> dict[str, bytes]:
+    return {
+        str(file.relative_to(root)): file.read_bytes()
+        for file in root.rglob("*") if file.is_file()
+    }
 
 
 def test_plans_legacy_project_as_schema_one_without_overwriting_user_files(
@@ -130,12 +146,12 @@ def test_frontend_preflight_prevents_root_mutation(tmp_path, monkeypatch, capsys
 
     def reject_frontend(*args, **kwargs):
         calls.append(kwargs)
-        return False
+        return FrontendUpgradeCheck(False)
 
-    monkeypatch.setattr(upgrade, "upgrade_frontend", reject_frontend)
+    monkeypatch.setattr(upgrade, "check_frontend_upgrade", reject_frontend)
 
     assert not upgrade.upgrade_project(root, CURRENT_VERSION, check=True)
-    assert calls[0]["check"] is True
+    assert calls == [{"env": None}]
     assert (root / "pyproject.toml").read_text() == original
     assert capsys.readouterr().out.strip().endswith(
         "the upgrade will not be successful until they are resolved."
@@ -215,12 +231,88 @@ def test_newer_target_is_delegated_to_temporary_release(tmp_path, monkeypatch):
 
 def test_successful_check_ends_with_a_clear_verdict(tmp_path, capsys):
     root = create_legacy_project(tmp_path)
+    before = project_snapshot(root)
 
     assert upgrade.upgrade_project(root, CURRENT_VERSION, check=True)
 
     assert capsys.readouterr().out.strip().endswith(
         "the upgrade should be successful."
     )
+    assert project_snapshot(root) == before
+
+
+def test_current_api_project_check_says_already_up_to_date(tmp_path, capsys):
+    root = create_legacy_project(tmp_path)
+    make_project_current(root)
+    before = project_snapshot(root)
+
+    assert upgrade.upgrade_project(root, CURRENT_VERSION, check=True)
+
+    output = capsys.readouterr().out
+    assert output.strip().endswith("the project is already up to date.")
+    assert "upgrade should be successful" not in output
+    assert project_snapshot(root) == before
+
+
+@pytest.mark.parametrize("root_current", [True, False])
+@pytest.mark.parametrize("frontend_current", [True, False])
+def test_check_combines_root_and_frontend_pending_changes(
+    tmp_path, monkeypatch, capsys, root_current, frontend_current,
+):
+    root = create_legacy_project(tmp_path, with_frontend=True)
+    if root_current:
+        make_project_current(root)
+    before = project_snapshot(root)
+    monkeypatch.setattr(
+        upgrade, "check_frontend_upgrade",
+        lambda *_args, **_kwargs: FrontendUpgradeCheck(True, frontend_current),
+    )
+
+    assert upgrade.upgrade_project(root, CURRENT_VERSION, check=True)
+
+    output = capsys.readouterr().out
+    expected = (
+        "the project is already up to date."
+        if root_current and frontend_current
+        else "the upgrade should be successful."
+    )
+    assert output.strip().endswith(expected)
+    if root_current and not frontend_current:
+        assert "Project root is already up to date." in output
+        assert "  Project is already up to date." not in output
+    assert project_snapshot(root) == before
+
+
+def test_manifest_only_upgrade_is_still_reported_as_pending(tmp_path, capsys):
+    root = create_legacy_project(tmp_path)
+    make_project_current(root)
+    (root / PROJECT_MANIFEST).unlink()
+    before = project_snapshot(root)
+    plan = upgrade.plan_project_upgrade(root, CURRENT_VERSION)
+    assert not plan.changes and plan.manifest_changed
+
+    assert upgrade.upgrade_project(root, CURRENT_VERSION, check=True)
+
+    assert capsys.readouterr().out.strip().endswith("the upgrade should be successful.")
+    assert project_snapshot(root) == before
+
+
+def test_conflicting_managed_file_check_does_not_change_the_project(tmp_path, capsys):
+    root = create_legacy_project(tmp_path)
+    make_project_current(root)
+    manifest = root / PROJECT_MANIFEST
+    manifest.write_text(manifest.read_text().replace(
+        upgrade.sha256(target_managed_files(root)["AGENTS.md"]), "old-framework-hash"
+    ))
+    (root / "AGENTS.md").write_text("modified user instructions\n")
+    before = project_snapshot(root)
+
+    assert not upgrade.upgrade_project(root, CURRENT_VERSION, check=True)
+
+    assert capsys.readouterr().out.strip().endswith(
+        "the upgrade will not be successful until they are resolved."
+    )
+    assert project_snapshot(root) == before
 
 
 def test_current_virtual_environment_updates_with_uv(monkeypatch):

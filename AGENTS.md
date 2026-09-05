@@ -131,8 +131,17 @@ change.
   even when the provider process exits successfully.
 - Create Android AVDs with an explicit modern phone profile. Detect generic
   low-resolution AVDs, ask before creating a sharper replacement, preserve the
-  old AVD and installed system image, prefer the sharper matching device, and
-  explicitly install and launch the app on that device when others are online.
+  old AVD and installed system image unless separately approved for cleanup,
+  prefer the sharper matching device, and explicitly install and launch the
+  app on that device when others are online.
+- Offer storage cleanup only after verifying a replacement runtime or AVD.
+  Ask before removing shared iOS runtimes, Android system images, or virtual
+  devices and explain effects on saved app data and other projects. Keep
+  current/newer runtimes and active devices, recheck immediately before each
+  removal, and skip cleanup if inventory is uncertain. Never delete iOS
+  device data as part of runtime cleanup or Android images still referenced
+  by an AVD. Only obsolete OnRamp command-line-tool copies may be pruned
+  automatically after validating their replacement; retain unrelated tools.
 - Treat Android's namespace, base application ID, and variant application ID
   as distinct values. Debug `applicationIdSuffix` values must be included when
   checking, caching, and launching an installed app, while the activity class

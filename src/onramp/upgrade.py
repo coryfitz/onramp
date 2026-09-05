@@ -15,7 +15,7 @@ import tempfile
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from .frontend import upgrade_frontend
+from .frontend import check_frontend_upgrade, upgrade_frontend
 from .project import (
     PROJECT_MANIFEST,
     atomic_write,
@@ -324,11 +324,14 @@ def print_project_plan(plan: ProjectUpgradePlan) -> None:
     for conflict in plan.conflicts:
         print(f"  conflict: {conflict}")
     if not plan.changes and not plan.manifest_changed and not plan.conflicts:
-        print("  Project is already up to date.")
+        subject = "Project root" if plan.has_frontend else "Project"
+        print(f"  {subject} is already up to date.")
 
 
-def print_project_check_result(success: bool) -> None:
-    if success:
+def print_project_check_result(success: bool, up_to_date: bool = False) -> None:
+    if success and up_to_date:
+        print("\n✓ Upgrade check passed: the project is already up to date.")
+    elif success:
         print(
             "\n✓ Upgrade check passed: no blocking issues were found; the "
             "upgrade should be successful."
@@ -422,18 +425,30 @@ def upgrade_project(
             print_project_check_result(False)
         return False
 
+    if check:
+        frontend_up_to_date = True
+        if plan.has_frontend:
+            frontend_result = check_frontend_upgrade(
+                plan.project_root / "build", env=frontend_env
+            )
+            if not frontend_result.success:
+                print_project_check_result(False)
+                return False
+            frontend_up_to_date = frontend_result.up_to_date
+        print_project_check_result(
+            True,
+            up_to_date=(
+                not plan.changes and not plan.manifest_changed
+                and frontend_up_to_date
+            ),
+        )
+        return True
     if plan.has_frontend and not upgrade_frontend(
         plan.project_root / "build",
         env=frontend_env,
         check=True,
     ):
-        if check:
-            print_project_check_result(False)
         return False
-
-    if check:
-        print_project_check_result(True)
-        return True
     if not plan.changes and not plan.manifest_changed:
         if not plan.has_frontend:
             return True

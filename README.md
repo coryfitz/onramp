@@ -260,6 +260,14 @@ itself is absent, OnRamp can open
 its Mac App Store page after permission, but Apple requires the user to
 complete the Xcode installation.
 
+After a replacement iOS runtime is verified, OnRamp offers to remove older
+idle runtimes, listing versions and approximate sizes. This requires separate
+confirmation because runtimes are shared across projects and Mac users.
+Simulator devices and app data remain; older devices need their runtime
+downloaded again before use. Current/newer versions, same-version builds, and
+active or uncertain device states are retained, with a fresh check before
+each removal. Failed downloads do not trigger cleanup.
+
 `onramp android` delegates the frontend launch to `onramp-js`. It checks
 Google's stable package list on every launch and asks before installing or
 upgrading the Android Emulator, its stable system image, or a reusable virtual
@@ -275,9 +283,15 @@ permission, it removes only the incompatible Emulator package, installs the
 native package, and verifies the resulting executable; AVDs and system images
 remain untouched. New AVDs use an explicit modern Pixel profile. OnRamp detects
 generic low-resolution devices, asks before creating a sharper replacement
-from the installed system image, preserves the old device and its app data,
-and prefers the sharper matching AVD. App installation explicitly targets the
-selected emulator even if another device remains online. Provider URL or
+from the installed system image, and prefers the sharper matching AVD. Once
+a replacement is verified, OnRamp offers separate cleanup of eligible older
+idle OnRamp devices, naming them and asking before permanently deleting their
+apps, data, and snapshots. User-created devices are retained. Older system
+images require their own cleanup confirmation and are retained whenever an AVD
+still references them or the inventory is uncertain. Strictly older OnRamp
+command-line-tool copies are removed automatically only after their replacement
+is validated; unrelated and same-version tool copies remain. App installation
+explicitly targets the selected emulator even if another device remains online. Provider URL or
 checksum mismatches are failures even when the provider exits with status
 zero. Emulator processes that exit during startup report their own diagnostics
 immediately instead of appearing to hang until the boot timeout. OnRamp selects
@@ -322,7 +336,9 @@ onramp upgrade --check
 ```
 
 The check prints the complete non-mutating upgrade plan and ends with a clear
-verdict explaining whether the upgrade should be successful.
+verdict: it says the project is already up to date when both project and
+frontend files and metadata are current. If changes are pending, it explains
+whether the upgrade should be successful or which conflicts block it.
 
 Apply the latest release, or select one explicitly:
 

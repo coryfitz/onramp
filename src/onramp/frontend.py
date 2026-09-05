@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -248,3 +250,41 @@ def upgrade_frontend(
         env,
         "upgrade",
     )
+
+
+@dataclass(frozen=True)
+class FrontendUpgradeCheck:
+    success: bool
+    up_to_date: bool = False
+
+
+def check_frontend_upgrade(
+    output_dir: str | Path,
+    env: Mapping[str, str] | None = None,
+) -> FrontendUpgradeCheck:
+    """Read the frontend verdict without storing check output in the project."""
+    with tempfile.TemporaryDirectory(prefix="onramp-upgrade-check-") as temporary:
+        report_path = Path(temporary) / "frontend.json"
+        child_env = dict(env) if env is not None else dict(os.environ)
+        child_env["ONRAMP_UPGRADE_CHECK_RESULT"] = str(report_path)
+        success = upgrade_frontend(output_dir, env=child_env, check=True)
+        if not success:
+            return FrontendUpgradeCheck(False)
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            # Older frontend releases do not provide a structured verdict.
+            # A successful process alone cannot establish that no work remains.
+            return FrontendUpgradeCheck(True)
+        if (
+            not isinstance(report, dict)
+            or type(report.get("schemaVersion")) is not int
+            or report["schemaVersion"] != 1
+            or type(report.get("success")) is not bool
+            or type(report.get("hasChanges")) is not bool
+        ):
+            return FrontendUpgradeCheck(True)
+        return FrontendUpgradeCheck(
+            success=report["success"],
+            up_to_date=report["success"] and not report["hasChanges"],
+        )

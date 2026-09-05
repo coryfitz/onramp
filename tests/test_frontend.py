@@ -1,5 +1,8 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from onramp import frontend
 
@@ -178,3 +181,64 @@ def test_frontend_upgrade_forwards_non_mutating_mode(tmp_path, monkeypatch):
 
     assert frontend.upgrade_frontend(tmp_path, check=True)
     assert commands[-1][-1] == "--check"
+
+
+@pytest.mark.parametrize("has_changes", [True, False])
+def test_frontend_check_reads_structured_status_outside_project(
+    tmp_path, monkeypatch, has_changes,
+):
+    original_env = {"PATH": "test-path", "CUSTOM": "preserved"}
+    reports = []
+
+    def fake_run(command, cwd, env, action):
+        assert command[-1] == "--check"
+        assert cwd == tmp_path
+        assert env["CUSTOM"] == "preserved"
+        report = Path(env["ONRAMP_UPGRADE_CHECK_RESULT"])
+        assert not report.is_relative_to(tmp_path)
+        reports.append(report)
+        report.write_text(json.dumps({
+            "schemaVersion": 1, "success": True, "hasChanges": has_changes,
+        }))
+        return True
+
+    monkeypatch.setattr(frontend, "_run_frontend_command", fake_run)
+
+    assert frontend.check_frontend_upgrade(tmp_path, original_env) == (
+        frontend.FrontendUpgradeCheck(True, not has_changes)
+    )
+    assert original_env == {"PATH": "test-path", "CUSTOM": "preserved"}
+    assert all(not report.exists() for report in reports)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("report", [
+    None, "invalid json", "[]", "{}",
+    '{"schemaVersion":1,"success":true,"hasChanges":"false"}',
+    '{"schemaVersion":true,"success":true,"hasChanges":false}',
+    '{"schemaVersion":2,"success":true,"hasChanges":false}',
+])
+def test_frontend_check_does_not_infer_current_state_from_missing_or_invalid_report(
+    tmp_path, monkeypatch, report,
+):
+    def fake_run(command, cwd, env, action):
+        if report is not None:
+            Path(env["ONRAMP_UPGRADE_CHECK_RESULT"]).write_text(report)
+        return True
+
+    monkeypatch.setattr(frontend, "_run_frontend_command", fake_run)
+    assert frontend.check_frontend_upgrade(tmp_path) == frontend.FrontendUpgradeCheck(True)
+
+
+@pytest.mark.parametrize("process_success", [True, False])
+def test_frontend_check_reports_failure_even_if_other_status_indicates_success(
+    tmp_path, monkeypatch, process_success,
+):
+    def fake_run(command, cwd, env, action):
+        Path(env["ONRAMP_UPGRADE_CHECK_RESULT"]).write_text(json.dumps({
+            "schemaVersion": 1, "success": not process_success, "hasChanges": False,
+        }))
+        return process_success
+
+    monkeypatch.setattr(frontend, "_run_frontend_command", fake_run)
+    assert frontend.check_frontend_upgrade(tmp_path) == frontend.FrontendUpgradeCheck(False)
