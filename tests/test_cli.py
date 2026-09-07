@@ -41,6 +41,101 @@ def test_runtime_environment_selection_is_shared_and_validated(monkeypatch):
         cli._select_environment("preview")
 
 
+def test_notification_dispatch_requires_explicit_send_flag(monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        cli,
+        "handle_notifications",
+        lambda args: captured.append((args.dry_run, args.send)) or 0,
+    )
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "onramp",
+            "notifications",
+            "dispatch",
+            "release/1",
+            "--subject",
+            "Ready",
+            "--text",
+            "Open",
+            "--resource-type",
+            "model",
+        ],
+    )
+    assert cli.main() == 0
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "onramp",
+            "notifications",
+            "dispatch",
+            "release/1",
+            "--subject",
+            "Ready",
+            "--text",
+            "Open",
+            "--resource-type",
+            "model",
+            "--send",
+        ],
+    )
+    assert cli.main() == 0
+    assert captured == [(False, False), (False, True)]
+
+
+def test_notification_send_returns_failure_while_a_delivery_is_busy(monkeypatch):
+    from tortoise import Tortoise
+
+    from onramp.auth import config as auth_config_module
+    from onramp.notifications import service as notification_service
+
+    class Manager:
+        def get_tortoise_config(self):
+            return {}
+
+        def environment(self):
+            return "test"
+
+    class Report:
+        def as_dict(self):
+            return {"event_key": "release/1", "matched": 1, "busy": 1}
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    async def busy_dispatch(*_args, **_kwargs):
+        return Report()
+
+    monkeypatch.setattr(db_manager_module, "get_db_manager", lambda _app: Manager())
+    monkeypatch.setattr(auth_config_module, "auth_enabled", lambda _app: True)
+    monkeypatch.setattr(Tortoise, "init", no_op)
+    monkeypatch.setattr(Tortoise, "close_connections", no_op)
+    monkeypatch.setattr(notification_service, "dispatch_subscriptions", busy_dispatch)
+    args = SimpleNamespace(
+        name="dispatch",
+        extra=["release/1"],
+        resource_type="model",
+        source=None,
+        resource_ids=None,
+        canonical_resource_id=None,
+        subscription_environment="test",
+        unnotified_only=False,
+        unverified_days=None,
+        subject="Ready",
+        text="Open",
+        text_file=None,
+        html_file=None,
+        retry_failed=False,
+        dry_run=False,
+        send=True,
+        all_subscriptions=False,
+    )
+    assert cli.handle_notifications(args) == 1
+
+
 def test_project_test_command_runs_configured_backend_and_frontend_checks(
     tmp_path, monkeypatch
 ):

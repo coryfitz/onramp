@@ -55,6 +55,33 @@ class EmailChallenge(models.Model):
         table = "email_challenges"
 
 
+class EmailChallengeRateLimit(models.Model):
+    """Database-atomic resend and hourly counters for email challenges."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    scope_key = models.CharField(max_length=64, unique=True)
+    email_hash = models.CharField(max_length=64, db_index=True)
+    window_started_at = models.DateTimeField()
+    count = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        table = "email_challenge_rate_limits"
+
+
+class ClientRequestRateLimit(models.Model):
+    """Short-lived, opaque client counters shared by every application worker."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    scope_key = models.CharField(max_length=64, unique=True)
+    count = models.IntegerField(default=0)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        table = "client_request_rate_limits"
+
+
 class AudienceIdentity(models.Model):
     """A server-controlled tester/internal classification keyed by email HMAC."""
 

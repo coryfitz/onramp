@@ -19,6 +19,7 @@ import tempfile
 import threading
 import time
 import webbrowser
+from pathlib import Path
 from watchfiles import watch
 from .db.migrations import (
     apply_migrations,
@@ -1190,6 +1191,147 @@ def handle_account(args):
         return 1
 
 
+def handle_email(args):
+    from onramp.db.manager import get_db_manager
+    from onramp.email_commands import run_email_command
+
+    # Match backend startup's settings/environment precedence, without opening
+    # the database or booting the application.
+    try:
+        selected = args.environment or get_db_manager(APP_DIR).environment()
+        if selected not in {"development", "test", "staging", "production"}:
+            print("Choose a valid ONRAMP_ENVIRONMENT for the email check.")
+            return 2
+        os.environ["ONRAMP_ENVIRONMENT"] = selected
+    except Exception:
+        print("Could not load app/settings.py for the email check.")
+        return 1
+    return run_email_command(args, APP_DIR)
+
+
+def handle_notifications(args):
+    """Report, clean, or dispatch framework notification subscriptions."""
+    operation = args.name
+    extra = getattr(args, "extra", [])
+    if operation not in {"report", "cleanup", "anonymize", "dispatch"}:
+        print(
+            "Usage: 'onramp notifications "
+            "<report|cleanup|anonymize EMAIL|dispatch EVENT_KEY>'"
+        )
+        return 2
+
+    async def operate():
+        from tortoise import Tortoise
+
+        from onramp.auth.config import auth_enabled
+        from onramp.db.manager import get_db_manager
+        from onramp.notifications.service import (
+            anonymize_notification_contact,
+            cleanup_notification_data,
+            dispatch_subscriptions,
+            notification_report,
+        )
+
+        manager = get_db_manager(APP_DIR)
+        if not auth_enabled(APP_DIR):
+            print("OnRamp notifications are not enabled in app/settings.py.")
+            return False
+        await Tortoise.init(config=manager.get_tortoise_config())
+        try:
+            filters = {
+                "resource_type": args.resource_type,
+                "source": args.source,
+                "resource_ids": args.resource_ids,
+                "canonical_resource_id": args.canonical_resource_id,
+                "environment": args.subscription_environment or manager.environment(),
+                "unnotified_only": args.unnotified_only,
+            }
+            if operation == "report":
+                if extra:
+                    print("Usage: 'onramp notifications report [filters]'")
+                    return False
+                result = await notification_report(**filters)
+            elif operation == "cleanup":
+                if extra:
+                    print("Usage: 'onramp notifications cleanup [--unverified-days DAYS]'")
+                    return False
+                result = await cleanup_notification_data(
+                    unverified_days=args.unverified_days,
+                    app_dir=APP_DIR,
+                )
+            elif operation == "anonymize":
+                if len(extra) != 1:
+                    print("Usage: 'onramp notifications anonymize <email>'")
+                    return False
+                result = await anonymize_notification_contact(extra[0])
+            else:
+                if len(extra) != 1 or not args.subject:
+                    print(
+                        "Usage: 'onramp notifications dispatch EVENT_KEY --subject "
+                        'SUBJECT (--text TEXT | --text-file PATH) [filters]'
+                    )
+                    return False
+                if bool(args.text) == bool(args.text_file):
+                    print("Choose exactly one of --text or --text-file.")
+                    return False
+                if args.send and args.dry_run:
+                    print("Choose --send or --dry-run, not both.")
+                    return False
+                explicitly_scoped = any(
+                    (
+                        args.resource_type,
+                        args.source,
+                        args.resource_ids,
+                        args.canonical_resource_id,
+                    )
+                )
+                if not args.all_subscriptions and not explicitly_scoped:
+                    print(
+                        "Refusing an unscoped dispatch. Add a resource filter or "
+                        "--all-subscriptions."
+                    )
+                    return False
+                try:
+                    text_body = (
+                        args.text
+                        if args.text is not None
+                        else Path(args.text_file).read_text(encoding="utf-8")
+                    )
+                    html_body = (
+                        Path(args.html_file).read_text(encoding="utf-8")
+                        if args.html_file
+                        else None
+                    )
+                except (OSError, UnicodeError) as error:
+                    print(f"Could not read notification content: {error}")
+                    return False
+                report = await dispatch_subscriptions(
+                    extra[0],
+                    subject=args.subject,
+                    text_body=text_body,
+                    html_body=html_body,
+                    retry_failed=args.retry_failed,
+                    dry_run=not args.send,
+                    app_dir=APP_DIR,
+                    **filters,
+                )
+                result = report.as_dict()
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return not (
+                operation == "dispatch"
+                and args.send
+                and bool(result.get("failed") or result.get("busy"))
+            )
+        finally:
+            await Tortoise.close_connections()
+
+    try:
+        return 0 if asyncio.run(operate()) else 1
+    except (ValueError, RuntimeError) as error:
+        print(f"Notification operation failed: {error}")
+        return 1
+
+
 # -----------------------------------------------------------------------------
 # CLI entrypoint
 # -----------------------------------------------------------------------------
@@ -1224,6 +1366,12 @@ def main():
   {FRAMEWORK_NAME.lower()} db check
   {FRAMEWORK_NAME.lower()} account classify <email> <regular|internal|tester>
   {FRAMEWORK_NAME.lower()} account role <email> <add|remove> <role>
+  {FRAMEWORK_NAME.lower()} email --check
+  {FRAMEWORK_NAME.lower()} email test <email> [--send [--confirm-production]]
+  {FRAMEWORK_NAME.lower()} notifications report
+  {FRAMEWORK_NAME.lower()} notifications cleanup [--unverified-days DAYS]
+  {FRAMEWORK_NAME.lower()} notifications anonymize <email>
+  {FRAMEWORK_NAME.lower()} notifications dispatch <event-key> --subject SUBJECT (--text TEXT | --text-file PATH) [--send]
   {FRAMEWORK_NAME.lower()} deploy init [render|container]
   {FRAMEWORK_NAME.lower()} deploy --check
   {FRAMEWORK_NAME.lower()} deploy [render|container]
@@ -1278,7 +1426,7 @@ upgrade creates recoverable backups and never overwrites modified managed files.
         parser.add_argument(
             "--check",
             action="store_true",
-            help="Run a read-only upgrade or deployment preflight",
+            help="Run a read-only upgrade, deployment, or email preflight",
         )
         parser.add_argument(
             "--to",
@@ -1290,6 +1438,31 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             action="store_true",
             help=argparse.SUPPRESS,
         )
+        parser.add_argument("--resource-type", default=None)
+        parser.add_argument("--source", default=None)
+        parser.add_argument(
+            "--resource-id",
+            dest="resource_ids",
+            action="append",
+            default=None,
+        )
+        parser.add_argument("--canonical-resource-id", default=None)
+        parser.add_argument(
+            "--subscription-environment",
+            choices=["development", "test", "staging", "production"],
+            default=None,
+        )
+        parser.add_argument("--subject", default=None)
+        parser.add_argument("--text", default=None)
+        parser.add_argument("--text-file", default=None)
+        parser.add_argument("--html-file", default=None)
+        parser.add_argument("--unverified-days", type=int, default=None)
+        parser.add_argument("--retry-failed", action="store_true")
+        parser.add_argument("--dry-run", action="store_true")
+        parser.add_argument("--send", action="store_true")
+        parser.add_argument("--confirm-production", action="store_true")
+        parser.add_argument("--all-subscriptions", action="store_true")
+        parser.add_argument("--unnotified-only", action="store_true")
         project_type = parser.add_mutually_exclusive_group()
         project_type.add_argument(
             "--api",
@@ -1312,7 +1485,9 @@ upgrade creates recoverable backups and never overwrites modified managed files.
         parser.add_argument("--web-only", action="store_true", help="Run web without backend")
         args = parser.parse_args()
 
-        _clean_empty_shadow_dirs(PROJECT_ROOT)
+        # Email diagnostics must not trigger unrelated project repairs.
+        if args.command != "email":
+            _clean_empty_shadow_dirs(PROJECT_ROOT)
 
         if args.command == "new":
             if args.name:
@@ -1417,6 +1592,12 @@ upgrade creates recoverable backups and never overwrites modified managed files.
 
         elif args.command == "account":
             return handle_account(args)
+
+        elif args.command == "email":
+            return handle_email(args)
+
+        elif args.command == "notifications":
+            return handle_notifications(args)
 
         elif args.command == "test":
             if args.name is not None or args.extra:

@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from urllib.parse import urlsplit
 
 from .db.manager import DatabaseManager
 from .project import atomic_write
@@ -72,8 +73,20 @@ def _append_gitignore(root: Path) -> None:
     print("✓ Updated .gitignore for local secret files")
 
 
-def _dockerfile() -> str:
-    return """FROM python:3.11-slim
+def _dockerfile(*, has_uv_lock: bool = False) -> str:
+    dependency_install = (
+        """COPY --chown=onramp:onramp pyproject.toml README.md uv.lock ./
+RUN pip install --no-cache-dir uv && uv sync --frozen --no-dev --no-install-project
+COPY --chown=onramp:onramp app ./app
+RUN uv sync --frozen --no-dev
+
+ENV PATH=/app/.venv/bin:$PATH"""
+        if has_uv_lock
+        else """COPY --chown=onramp:onramp pyproject.toml README.md ./
+COPY --chown=onramp:onramp app ./app
+RUN pip install --no-cache-dir ."""
+    )
+    return f"""FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \\
     PYTHONUNBUFFERED=1
@@ -82,9 +95,7 @@ WORKDIR /app
 
 RUN addgroup --system onramp && adduser --system --ingroup onramp onramp
 
-COPY --chown=onramp:onramp pyproject.toml README.md ./
-COPY --chown=onramp:onramp app ./app
-RUN pip install --no-cache-dir .
+{dependency_install}
 
 USER onramp
 
@@ -124,6 +135,11 @@ def _environment_example() -> str:
 # ONRAMP_ALLOWED_HOSTS=api.example.com
 # ONRAMP_CORS_ALLOWED_ORIGINS=https://example.com
 # ONRAMP_FORWARDED_ALLOW_IPS=127.0.0.1
+# ONRAMP_PUBLIC_URL=https://api.example.com
+# ONRAMP_AUTH_SECRET=generate-a-separate-secret-per-environment
+# ONRAMP_IDENTITY_SECRET=generate-a-separate-secret-per-environment
+# RESEND_API_KEY=set-in-the-provider-secret-manager
+# ONRAMP_EMAIL_FROM=Example <accounts@example.com>
 """
 
 
@@ -138,6 +154,12 @@ def _project_components(root: Path) -> tuple[bool, bool]:
         except (OSError, ValueError, TypeError):
             pass
     return has_backend, has_web
+
+
+def _project_auth_config(root: Path) -> dict:
+    if not (root / "app" / "settings.py").is_file():
+        return {}
+    return dict(DatabaseManager(str(root / "app")).settings.get("AUTH", {}) or {})
 
 
 def _deploy_config(
@@ -203,7 +225,13 @@ def _deploy_config(
     return "\n".join(lines)
 
 
-def _render_blueprint(name: str, *, has_backend: bool, has_web: bool) -> str:
+def _render_blueprint(
+    name: str,
+    *,
+    has_backend: bool,
+    has_web: bool,
+    auth: dict | None = None,
+) -> str:
     database_name = f"{name}-db"
     service_name = f"{name}-api"
     services = "services:\n"
@@ -211,7 +239,7 @@ def _render_blueprint(name: str, *, has_backend: bool, has_web: bool) -> str:
         services += f"""  - type: web
     name: {service_name}
     runtime: docker
-    plan: starter
+    plan: 0.5c-512mb
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health/ready
     preDeployCommand: onramp db upgrade
@@ -224,6 +252,23 @@ def _render_blueprint(name: str, *, has_backend: bool, has_web: bool) -> str:
         fromDatabase:
           name: {database_name}
           property: connectionString
+"""
+        if bool((auth or {}).get("enabled")):
+            services += f"""      - key: ONRAMP_AUTH_SECRET
+        generateValue: true
+      - key: ONRAMP_IDENTITY_SECRET
+        generateValue: true
+      - key: ONRAMP_PUBLIC_URL
+        fromService:
+          type: web
+          name: {service_name}
+          envVarKey: RENDER_EXTERNAL_URL
+"""
+            if not str((auth or {}).get("email_sender") or "").strip():
+                services += """      - key: RESEND_API_KEY
+        sync: false
+      - key: ONRAMP_EMAIL_FROM
+        sync: false
 """
     if has_web:
         services += f"""  - type: web
@@ -242,7 +287,7 @@ def _render_blueprint(name: str, *, has_backend: bool, has_web: bool) -> str:
         services += f"""
 databases:
   - name: {database_name}
-    plan: basic-256mb
+    plan: 256mb
 """
     return services
 
@@ -265,8 +310,12 @@ def initialize_deployment(project_root: str | Path, provider: str = "render") ->
         return False
 
     name = _slug(root.name)
+    auth = _project_auth_config(root) if has_backend else {}
     if has_backend:
-        _write_once(root / "Dockerfile", _dockerfile())
+        _write_once(
+            root / "Dockerfile",
+            _dockerfile(has_uv_lock=(root / "uv.lock").is_file()),
+        )
         _write_once(root / ".dockerignore", _dockerignore())
     _write_once(root / ".env.example", _environment_example())
     _write_once(
@@ -281,7 +330,12 @@ def initialize_deployment(project_root: str | Path, provider: str = "render") ->
     if provider == "render":
         _write_once(
             root / "render.yaml",
-            _render_blueprint(name, has_backend=has_backend, has_web=has_web),
+            _render_blueprint(
+                name,
+                has_backend=has_backend,
+                has_web=has_web,
+                auth=auth,
+            ),
         )
     _append_gitignore(root)
 
@@ -548,6 +602,177 @@ def _raw_sql_migrations(paths: list[Path]) -> list[str]:
     return raw_sql
 
 
+def _render_env_block(blueprint: str, key: str) -> str:
+    """Return one Render service env-var block without needing a YAML runtime."""
+
+    lines = blueprint.splitlines()
+    key_pattern = re.compile(rf"^(\s*)-\s+key:\s*{re.escape(key)}\s*$")
+    for index, line in enumerate(lines):
+        match = key_pattern.match(line)
+        if not match:
+            continue
+        indentation = len(match.group(1))
+        block = [line]
+        for following in lines[index + 1 :]:
+            if following.strip() and len(following) - len(following.lstrip()) <= indentation:
+                break
+            block.append(following)
+        return "\n".join(block)
+    return ""
+
+
+def _render_service_blocks(blueprint: str) -> list[str]:
+    """Extract root-level Render service mappings by YAML indentation."""
+
+    lines = blueprint.splitlines()
+    try:
+        start = next(
+            index for index, line in enumerate(lines) if line.strip() == "services:"
+        ) + 1
+    except StopIteration:
+        return []
+    blocks: list[list[str]] = []
+    current: list[str] | None = None
+    for line in lines[start:]:
+        if line.strip() and not line.startswith(" "):
+            break
+        if re.match(r"^  -\s+type:\s*", line):
+            if current:
+                blocks.append(current)
+            current = [line]
+        elif current is not None:
+            current.append(line)
+    if current:
+        blocks.append(current)
+    return ["\n".join(block) for block in blocks]
+
+
+def _render_env_group_blocks(blueprint: str) -> dict[str, str]:
+    """Return root-level Render environment groups keyed by their exact name."""
+
+    lines = blueprint.splitlines()
+    try:
+        start = next(
+            index
+            for index, line in enumerate(lines)
+            if line.strip() == "envVarGroups:"
+        ) + 1
+    except StopIteration:
+        return {}
+    blocks: list[list[str]] = []
+    current: list[str] | None = None
+    for line in lines[start:]:
+        if line.strip() and not line.startswith(" "):
+            break
+        if re.match(r"^  -\s+name:\s*", line):
+            if current:
+                blocks.append(current)
+            current = [line]
+        elif current is not None:
+            current.append(line)
+    if current:
+        blocks.append(current)
+
+    result = {}
+    for block_lines in blocks:
+        block = "\n".join(block_lines)
+        name = re.search(r"(?m)^\s{2}-\s+name:\s*['\"]?([^'\"\s]+)", block)
+        if name:
+            result[name.group(1)] = block
+    return result
+
+
+def _render_backend_service_block(
+    blueprint: str, selected: dict[str, dict], root: Path
+) -> str:
+    """Resolve the selected backend's service block, never another service's env."""
+
+    expected_names = {f"{_slug(root.name)}-api"}
+    for target in selected.values():
+        if "backend" not in target.get("components", []):
+            continue
+        configured = str(
+            target.get("render_name") or target.get("image") or ""
+        ).strip()
+        if configured:
+            expected_names.add(configured.rsplit("/", 1)[-1].split(":", 1)[0])
+    for block in _render_service_blocks(blueprint):
+        name = re.search(r"(?m)^\s{4}name:\s*['\"]?([^'\"\s]+)", block)
+        runtime = re.search(r"(?m)^\s{4}runtime:\s*docker\s*$", block)
+        service_type = re.search(r"(?m)^\s{2}-\s+type:\s*web\s*$", block)
+        if (
+            name
+            and name.group(1) in expected_names
+            and runtime
+            and service_type
+        ):
+            return block
+    return ""
+
+
+def _render_backend_env_block(
+    blueprint: str,
+    backend_service: str,
+    key: str,
+) -> str:
+    """Resolve an env var directly or through a group attached to the backend."""
+
+    direct = _render_env_block(backend_service, key)
+    if direct:
+        return direct
+    groups = _render_env_group_blocks(blueprint)
+    attached = re.findall(
+        r"(?m)^\s+-\s+fromGroup:\s*['\"]?([^'\"\s]+)", backend_service
+    )
+    for group_name in attached:
+        block = _render_env_block(groups.get(group_name, ""), key)
+        if block:
+            # Render does not support sync:false inside environment groups.
+            return "" if "sync: false" in block else block
+    return ""
+
+
+def _secure_public_url(value: object) -> bool:
+    try:
+        parts = urlsplit(str(value or "").strip())
+        parts.port
+    except ValueError:
+        return False
+    return bool(
+        parts.scheme == "https"
+        and parts.hostname
+        and parts.username is None
+        and parts.password is None
+        and not parts.query
+        and not parts.fragment
+    )
+
+
+def _render_secret_is_declared(block: str) -> bool:
+    return bool(
+        block
+        and ("generateValue: true" in block or "sync: false" in block)
+        and not re.search(r"(?m)^\s+value:\s*\S", block)
+    )
+
+
+def _render_public_url_is_declared(block: str) -> bool:
+    if not block:
+        return False
+    if "envVarKey: RENDER_EXTERNAL_URL" in block and "fromService:" in block:
+        return True
+    explicit = re.search(r"(?m)^\s+value:\s*['\"]?([^'\"\s]+)", block)
+    return bool(explicit and _secure_public_url(explicit.group(1)))
+
+
+def _render_email_from_is_declared(block: str) -> bool:
+    if "sync: false" in block:
+        return True
+    explicit = re.search(r"(?m)^\s+value:\s*(.+?)\s*$", block)
+    value = explicit.group(1).strip("'\"") if explicit else ""
+    return bool("@" in value and "@example.com" not in value)
+
+
 def check_deployment(
     project_root: str | Path,
     provider_override: str | None = None,
@@ -590,6 +815,12 @@ def check_deployment(
     }
     failures: list[str] = []
     notices: list[str] = []
+    render_path = root / "render.yaml"
+    render_blueprint = (
+        render_path.read_text(encoding="utf-8") if render_path.is_file() else ""
+    )
+    backend_manager: DatabaseManager | None = None
+    auth_settings: dict = {}
 
     if provider not in SUPPORTED_PROVIDERS:
         failures.append(f"unsupported provider '{provider}'")
@@ -597,7 +828,7 @@ def check_deployment(
         failures.append("deployment environment must be 'staging' or 'production'")
     if not (root / ".env.example").is_file():
         failures.append("missing .env.example")
-    if provider == "render" and not (root / "render.yaml").is_file():
+    if provider == "render" and not render_path.is_file():
         failures.append("missing render.yaml")
 
     for name, target in selected.items():
@@ -644,11 +875,116 @@ def check_deployment(
         if not settings_path.is_file():
             failures.append("missing app/settings.py")
         else:
-            manager = DatabaseManager(str(root / "app"))
-            committed_database = dict(manager.settings.get("DATABASE", {}))
+            backend_manager = DatabaseManager(str(root / "app"))
+            committed_database = dict(
+                backend_manager.settings.get("DATABASE", {})
+            )
+            auth_settings = dict(backend_manager.settings.get("AUTH", {}) or {})
             if committed_database.get("password"):
                 failures.append(
                     "app/settings.py contains a database password; use DATABASE_URL instead"
+                )
+            try:
+                cors_origins = backend_manager.cors_allowed_origins()
+            except ValueError as error:
+                failures.append(str(error))
+            else:
+                if "*" in cors_origins:
+                    failures.append(
+                        "wildcard CORS origins are not allowed for staging or production; "
+                        "configure explicit ONRAMP_CORS_ALLOWED_ORIGINS"
+                    )
+
+    if "backend" in components and bool(auth_settings.get("enabled")):
+        auth_render_service = (
+            _render_backend_service_block(render_blueprint, selected, root)
+            if provider == "render"
+            else ""
+        )
+        configured_public_url = (
+            os.environ.get("ONRAMP_PUBLIC_URL", "").strip()
+            or str(auth_settings.get("public_url") or "").strip()
+        )
+        if configured_public_url and not _secure_public_url(configured_public_url):
+            failures.append(
+                "AUTH public URL must be an HTTPS URL without credentials, query, "
+                "or fragment in staging and production"
+            )
+
+        custom_sender = str(auth_settings.get("email_sender") or "").strip()
+        configured_from = (
+            os.environ.get("ONRAMP_EMAIL_FROM", "").strip()
+            or str(auth_settings.get("email_from") or "").strip()
+        )
+        if provider == "render":
+            for secret_name in ("ONRAMP_AUTH_SECRET", "ONRAMP_IDENTITY_SECRET"):
+                if not _render_secret_is_declared(
+                    _render_backend_env_block(
+                        render_blueprint, auth_render_service, secret_name
+                    )
+                ):
+                    failures.append(
+                        f"AUTH requires {secret_name} in render.yaml with "
+                        "generateValue: true (or sync: false)"
+                    )
+            if not configured_public_url and not _render_public_url_is_declared(
+                _render_backend_env_block(
+                    render_blueprint, auth_render_service, "ONRAMP_PUBLIC_URL"
+                )
+            ):
+                failures.append(
+                    "AUTH requires ONRAMP_PUBLIC_URL in render.yaml, preferably "
+                    "derived from RENDER_EXTERNAL_URL"
+                )
+            if not custom_sender:
+                resend_block = _render_backend_env_block(
+                    render_blueprint, auth_render_service, "RESEND_API_KEY"
+                )
+                if "sync: false" not in resend_block:
+                    failures.append(
+                        "AUTH email delivery requires RESEND_API_KEY with sync: false "
+                        "in render.yaml, or AUTH.email_sender"
+                    )
+                from_block = _render_backend_env_block(
+                    render_blueprint, auth_render_service, "ONRAMP_EMAIL_FROM"
+                )
+                if (
+                    not _render_email_from_is_declared(from_block)
+                    and (not configured_from or "@example.com" in configured_from)
+                ):
+                    failures.append(
+                        "AUTH email delivery requires ONRAMP_EMAIL_FROM with sync: "
+                        "false in render.yaml (or a non-placeholder AUTH.email_from)"
+                    )
+        else:
+            signing_secret = os.environ.get("ONRAMP_AUTH_SECRET", "").strip()
+            identity_secret = os.environ.get("ONRAMP_IDENTITY_SECRET", "").strip()
+            if len(signing_secret) < 32:
+                failures.append(
+                    "AUTH requires ONRAMP_AUTH_SECRET with at least 32 characters"
+                )
+            if len(identity_secret) < 32:
+                failures.append(
+                    "AUTH requires ONRAMP_IDENTITY_SECRET with at least 32 characters"
+                )
+            if signing_secret and signing_secret == identity_secret:
+                failures.append(
+                    "ONRAMP_AUTH_SECRET and ONRAMP_IDENTITY_SECRET must be separate"
+                )
+            if not configured_public_url:
+                failures.append(
+                    "AUTH requires ONRAMP_PUBLIC_URL for hosted email actions"
+                )
+            if not custom_sender and not os.environ.get("RESEND_API_KEY", "").strip():
+                failures.append(
+                    "AUTH email delivery requires RESEND_API_KEY or AUTH.email_sender"
+                )
+            if (
+                not custom_sender
+                and (not configured_from or "@example.com" in configured_from)
+            ):
+                failures.append(
+                    "AUTH email delivery requires a production ONRAMP_EMAIL_FROM"
                 )
     tracked_secrets = _tracked_secret_files(root)
     if tracked_secrets:
@@ -675,8 +1011,8 @@ def check_deployment(
             notices.append("DATABASE_URL is available for deployment checks")
         elif (
             provider == "render"
-            and (root / "render.yaml").is_file()
-            and "fromDatabase:" in (root / "render.yaml").read_text(encoding="utf-8")
+            and render_path.is_file()
+            and "fromDatabase:" in render_blueprint
         ):
             notices.append("Render will inject DATABASE_URL from its managed database")
         else:

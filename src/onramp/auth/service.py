@@ -3,18 +3,30 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+import hashlib
 import hmac
 import inspect
+import uuid
 
 from tortoise.transactions import in_transaction
+from tortoise.expressions import F, Q
 
 from onramp.api import APIError, bearer_token
 
 from .config import auth_config, import_callable
 from .email import send_verification_code
-from .models import Account, AccountSession, AudienceIdentity, EmailChallenge
+from .models import (
+    Account,
+    AccountSession,
+    AudienceIdentity,
+    ClientRequestRateLimit,
+    EmailChallenge,
+    EmailChallengeRateLimit,
+)
 from .security import (
     challenge_digest,
+    client_request_digest,
     email_digest,
     new_code,
     new_session_token,
@@ -28,6 +40,143 @@ VALID_AUDIENCES = {"regular", "internal", "tester"}
 
 class AuthenticationError(APIError):
     pass
+
+
+async def cleanup_client_request_limits(*, maximum: int = 100) -> int:
+    """Delete a bounded batch; recheck expiry so a concurrent reset survives."""
+    if not 1 <= maximum <= 10_000:
+        raise ValueError("Client-limit cleanup batches must contain 1 to 10000 rows.")
+    now = utcnow()
+    stale_ids = await ClientRequestRateLimit.filter(expires_at__lte=now).order_by(
+        "expires_at"
+    ).limit(maximum).values_list("id", flat=True)
+    if not stale_ids:
+        return 0
+    return await ClientRequestRateLimit.filter(
+        id__in=stale_ids, expires_at__lte=now
+    ).delete()
+
+
+async def enforce_client_request_limit(
+    request_context,
+    *,
+    scope: str,
+    config_key: str,
+    default: int = 120,
+    app_dir: str | None = None,
+) -> None:
+    """Claim a database-atomic hourly slot shared across processes and hosts.
+
+    This is application abuse protection, not a replacement for ingress-level
+    request/body/concurrency limits. Trusted internal calls may omit context.
+    HTTP contexts without an address share an unknown-client bucket.
+    """
+
+    limit = int(auth_config(app_dir).get(config_key, default))
+    client_host = getattr(request_context, "client_host", None)
+    if limit <= 0 or request_context is None:
+        return
+    await cleanup_client_request_limits()
+    now = utcnow()
+    expires_at = now + timedelta(hours=1)
+    scope_key = client_request_digest(scope, client_host)
+    _, created = await ClientRequestRateLimit.get_or_create(
+        scope_key=scope_key,
+        defaults={"count": 1, "expires_at": expires_at},
+    )
+    if created:
+        return
+    reset = await ClientRequestRateLimit.filter(
+        scope_key=scope_key, expires_at__lte=now
+    ).update(count=1, expires_at=expires_at)
+    if reset:
+        return
+    claimed = await ClientRequestRateLimit.filter(
+        scope_key=scope_key, expires_at__gt=now, count__lt=limit
+    ).update(count=F("count") + 1)
+    if not claimed:
+        raise AuthenticationError(
+            "Too many requests were submitted. Try again later.",
+            status=429,
+            code="request_rate_limited",
+        )
+
+
+@dataclass(frozen=True)
+class _RateLimitClaim:
+    scope_key: str
+    window_started_at: datetime
+
+
+def _rate_limit_scope(*parts: object) -> str:
+    encoded = ":".join(str(part or "") for part in parts).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+async def _claim_challenge_rate_limit(
+    *,
+    scope_key: str,
+    hashed_email: str,
+    now: datetime,
+    window: timedelta,
+    maximum: int,
+) -> _RateLimitClaim | None:
+    """Atomically claim one slot in a fixed-start database window."""
+
+    if maximum <= 0:
+        return None
+    row, created = await EmailChallengeRateLimit.get_or_create(
+        scope_key=scope_key,
+        defaults={
+            "email_hash": hashed_email,
+            "window_started_at": now,
+            "count": 1,
+        },
+    )
+    if created:
+        return _RateLimitClaim(scope_key, now)
+
+    cutoff = now - window
+    reset = await EmailChallengeRateLimit.filter(
+        scope_key=scope_key,
+        window_started_at__lte=cutoff,
+    ).update(window_started_at=now, count=1, updated_at=now)
+    if reset:
+        return _RateLimitClaim(scope_key, now)
+
+    await row.refresh_from_db()
+    claimed = await EmailChallengeRateLimit.filter(
+        scope_key=scope_key,
+        window_started_at=row.window_started_at,
+        count__lt=maximum,
+    ).update(count=F("count") + 1, updated_at=now)
+    if not claimed:
+        return None
+    return _RateLimitClaim(scope_key, row.window_started_at)
+
+
+async def _release_challenge_rate_limit(
+    claim: _RateLimitClaim | None, *, now: datetime
+) -> None:
+    if not claim:
+        return
+    await EmailChallengeRateLimit.filter(
+        scope_key=claim.scope_key,
+        window_started_at=claim.window_started_at,
+        count__gt=0,
+    ).update(count=F("count") - 1, updated_at=now)
+
+
+async def clear_challenge_resend_limit(
+    hashed_email: str, purpose: str, subject_id: str | None
+) -> None:
+    """Allow a new proof after an explicit cancellation invalidates the old one."""
+
+    await EmailChallengeRateLimit.filter(
+        scope_key=_rate_limit_scope(
+            "challenge-resend", hashed_email, purpose, subject_id
+        )
+    ).update(count=0, updated_at=utcnow())
 
 
 def utcnow() -> datetime:
@@ -52,6 +201,7 @@ async def create_challenge(
     purpose: str,
     *,
     subject_id: str | None = None,
+    action_subject_id: str | None = None,
     app_dir: str | None = None,
 ) -> EmailChallenge:
     email = api_email(email_value)
@@ -59,47 +209,63 @@ async def create_challenge(
     config = auth_config(app_dir)
     now = utcnow()
     resend_delay = timedelta(seconds=int(config["resend_delay_seconds"]))
-    latest = await EmailChallenge.filter(
-        email_hash=hashed_email,
-        purpose=purpose,
-        created_at__gte=now - resend_delay,
-    ).first()
-    if latest:
+    resend_claim = await _claim_challenge_rate_limit(
+        scope_key=_rate_limit_scope(
+            "challenge-resend", hashed_email, purpose, subject_id
+        ),
+        hashed_email=hashed_email,
+        now=now,
+        window=resend_delay,
+        maximum=1,
+    )
+    if not resend_claim:
         raise AuthenticationError(
             "A code was sent recently. Wait a minute before requesting another.",
             status=429,
             code="code_rate_limited",
         )
-    hourly_count = await EmailChallenge.filter(
-        email_hash=hashed_email,
-        created_at__gte=now - timedelta(hours=1),
-    ).count()
-    if hourly_count >= int(config["hourly_challenge_limit"]):
+    hourly_claim = await _claim_challenge_rate_limit(
+        scope_key=_rate_limit_scope("challenge-hourly", hashed_email),
+        hashed_email=hashed_email,
+        now=now,
+        window=timedelta(hours=1),
+        maximum=int(config["hourly_challenge_limit"]),
+    )
+    if not hourly_claim:
+        await _release_challenge_rate_limit(resend_claim, now=utcnow())
         raise AuthenticationError(
             "Too many verification codes were requested. Try again later.",
             status=429,
             code="code_rate_limited",
         )
     code = new_code()
-    challenge = await EmailChallenge.create(
-        email=email,
-        email_hash=hashed_email,
-        purpose=purpose,
-        subject_id=subject_id,
-        code_digest=challenge_digest(email, purpose, code),
-        expires_at=now + timedelta(minutes=int(config["challenge_minutes"])),
-    )
+    challenge = None
     try:
+        challenge = await EmailChallenge.create(
+            email=email,
+            email_hash=hashed_email,
+            purpose=purpose,
+            subject_id=subject_id,
+            code_digest=challenge_digest(email, purpose, code),
+            expires_at=now + timedelta(minutes=int(config["challenge_minutes"])),
+        )
         await send_verification_code(
             email,
             purpose,
             code,
             f"verification/{challenge.id}",
             app_dir=app_dir,
+            subject_id=subject_id,
+            action_subject_id=action_subject_id,
         )
     except Exception:
-        await challenge.delete()
+        if challenge:
+            await challenge.delete()
+        failed_at = utcnow()
+        await _release_challenge_rate_limit(resend_claim, now=failed_at)
+        await _release_challenge_rate_limit(hourly_claim, now=failed_at)
         raise
+    assert challenge is not None
     return challenge
 
 
@@ -110,6 +276,7 @@ async def consume_challenge(
     *,
     subject_id: str | None = None,
     app_dir: str | None = None,
+    mark_consumed: bool = True,
 ) -> EmailChallenge:
     email = api_email(email_value)
     code = str(code_value or "").strip()
@@ -136,11 +303,55 @@ async def consume_challenge(
         )
     expected = challenge_digest(email, purpose, code)
     if not hmac.compare_digest(challenge.code_digest, expected):
-        challenge.attempts += 1
-        await challenge.save(update_fields=["attempts"])
+        incremented = await EmailChallenge.filter(
+            id=challenge.id,
+            consumed_at=None,
+            expires_at__gt=now,
+            attempts__lt=maximum,
+        ).update(attempts=F("attempts") + 1)
+        if not incremented:
+            await challenge.refresh_from_db()
+            if challenge.attempts >= maximum:
+                raise AuthenticationError(
+                    "Too many incorrect attempts. Request a new code.",
+                    status=429,
+                    code="code_attempts_exceeded",
+                )
+            raise AuthenticationError(
+                "That verification code has expired. Request a new one.",
+                code="code_expired",
+            )
         raise AuthenticationError("That verification code is incorrect.")
-    challenge.consumed_at = now
-    await challenge.save(update_fields=["consumed_at"])
+    if mark_consumed:
+        consumed = await EmailChallenge.filter(
+            id=challenge.id,
+            consumed_at=None,
+            expires_at__gt=now,
+            attempts__lt=maximum,
+        ).update(consumed_at=now)
+        if not consumed:
+            await challenge.refresh_from_db()
+            if challenge.attempts >= maximum:
+                raise AuthenticationError(
+                    "Too many incorrect attempts. Request a new code.",
+                    status=429,
+                    code="code_attempts_exceeded",
+                )
+            raise AuthenticationError(
+                "That verification code has expired. Request a new one.",
+                code="code_expired",
+            )
+        challenge.consumed_at = now
+    elif not await EmailChallenge.filter(
+        id=challenge.id,
+        consumed_at=None,
+        expires_at__gt=now,
+        attempts__lt=maximum,
+    ).exists():
+        raise AuthenticationError(
+            "That verification code has expired. Request a new one.",
+            code="code_expired",
+        )
     return challenge
 
 
@@ -280,19 +491,46 @@ async def delete_account(
         subject_id=str(account.id),
         app_dir=app_dir,
     )
-    from onramp.notifications.models import NotificationSubscription
+    from onramp.notifications.models import (
+        NotificationContactToken,
+        NotificationDelivery,
+        NotificationSubscription,
+    )
 
     now = utcnow()
     results: dict[str, object] = {}
     async with in_transaction() as connection:
+        results["deleted_notification_contact_tokens"] = (
+            await NotificationContactToken.filter(
+                email_hash=account.email_hash
+            ).using_db(connection).delete()
+        )
         subscriptions = NotificationSubscription.filter(
-            account_id=account.id
+            Q(account_id=account.id) | Q(contact_email_hash=account.email_hash)
         ).using_db(connection)
+        subscription_ids = [item.id for item in await subscriptions]
+        deliveries = await NotificationDelivery.filter(
+            recipient_email_hash=account.email_hash
+        ).using_db(connection)
+        for delivery in deliveries:
+            delivery.recipient_email_hash = None
+            delivery.idempotency_key = f"anonymized/{uuid.uuid4()}"
+            await delivery.save(
+                using_db=connection,
+                update_fields=["recipient_email_hash", "idempotency_key", "updated_at"],
+            )
         results["anonymized_subscriptions"] = await subscriptions.update(
             account_id=None,
             contact_email=None,
             contact_email_hash=None,
+            demand_eligible=False,
             anonymized_at=now,
+            consent_generation=F("consent_generation") + 1,
+        )
+        results["deleted_notification_contact_tokens"] += (
+            await NotificationContactToken.filter(
+                email_hash=account.email_hash
+            ).using_db(connection).delete()
         )
         for reference in auth_config(app_dir).get("deletion_hooks", []):
             hook = import_callable(str(reference))
@@ -302,6 +540,9 @@ async def delete_account(
             results[str(reference)] = value
         await AccountSession.filter(account_id=account.id).using_db(connection).delete()
         await EmailChallenge.filter(email_hash=account.email_hash).using_db(
+            connection
+        ).delete()
+        await EmailChallengeRateLimit.filter(email_hash=account.email_hash).using_db(
             connection
         ).delete()
         # AudienceIdentity is a server-controlled classification, not account

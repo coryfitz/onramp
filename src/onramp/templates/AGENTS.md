@@ -51,6 +51,26 @@ tools working on __ONRAMP_APP_NAME__.
   select, validate, build, and deploy configured backend and web targets. When
   both are selected, validate and build both before deploying the backend and
   then the frontend. `onramp start` is the stable production ASGI entry point.
+- Framework notification dispatches preview unless `--send` is explicit. Treat
+  each event key as application-global, filter by runtime environment, preserve
+  delivery idempotency and suppression, and never bypass the application
+  subscription validator. After framework-owned model changes, generate and
+  commit the project's portable migration before deployment.
+- Keep notification ready hooks idempotent: they run after verified persistence,
+  and a failed hook is deliberately retried with the same unconsumed proof.
+- Remembered email tokens are notification-only capabilities, scoped to email,
+  resource type and environment. They have no expiry by default, remain
+  revocable, and may opt into a fixed positive lifetime through configuration.
+  Store them privately, send them only in `X-OnRamp-Notification-Token`, and
+  never treat them as account sessions. Let the server decide token validity.
+  Anonymous intake without valid remembered proof still requires a fresh code.
+- Built-in account and notification request/verification limits use atomic,
+  environment-scoped database buckets shared by workers and restarts. Keep
+  production edge protection too, and trust forwarded client addresses only
+  through explicitly configured Uvicorn ingress proxies, never arbitrary headers.
+- Keep signed absolute action URLs HTTPS-only outside local development. Native
+  clients use the proof-gated relative unsubscribe path with their platform API
+  base; never expose either management capability from unproved intake.
 
 ## Native behavior
 

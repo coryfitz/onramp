@@ -34,10 +34,38 @@ async def api_exception_handler(_request: Request, error: APIError) -> JSONRespo
     return JSONResponse(payload, status_code=error.status)
 
 
-async def json_body(request: Request) -> dict[str, Any]:
-    """Read a JSON object or raise a consistent client-safe error."""
+async def bounded_body(request: Request, *, maximum_bytes: int) -> bytes:
+    """Read a request body without buffering more than the declared limit."""
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > maximum_bytes:
+                raise APIError(
+                    "The request body is too large.",
+                    status=413,
+                    code="request_too_large",
+                )
+        except ValueError:
+            raise APIError("Content-Length must be an integer.")
+    raw_body = bytearray()
+    async for chunk in request.stream():
+        if len(raw_body) + len(chunk) > maximum_bytes:
+            raise APIError(
+                "The request body is too large.",
+                status=413,
+                code="request_too_large",
+            )
+        raw_body.extend(chunk)
+    return bytes(raw_body)
+
+
+async def json_body(
+    request: Request, *, maximum_bytes: int = 65_536
+) -> dict[str, Any]:
+    """Read a bounded JSON object or raise a consistent client-safe error."""
+    raw_body = await bounded_body(request, maximum_bytes=maximum_bytes)
     try:
-        body = await request.json()
+        body = json.loads(raw_body)
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise APIError("Send a valid JSON request body.") from error
     if not isinstance(body, dict):

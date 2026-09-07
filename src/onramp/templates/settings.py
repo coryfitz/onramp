@@ -12,6 +12,22 @@ AUTH = {
     'enabled': False,
     'app_name': '__ONRAMP_APP_NAME__',
     'email_from': '__ONRAMP_APP_NAME__ <accounts@example.com>',
+    # 'email_sender': 'app.mail.send_transactional',
+    # Presentation only; keeps the normal development outbox/hosted sender.
+    # 'verification_email_renderer': 'app.mail.render_verification_email',
+    # Hosted notification emails use ONRAMP_PUBLIC_URL for unsubscribe links.
+    # 'notification_subscription_validator': 'app.notifications.validate',
+    # Runs after proof; failures are retried, so this hook must be idempotent.
+    # 'notification_subscription_ready_hook': 'app.notifications.ready',
+    'auth_ip_hourly_limit': 120,
+    'notification_request_bytes': 16_384,
+    'notification_metadata_bytes': 16_384,
+    'notification_ip_hourly_limit': 120,
+    # Optional remembered email proof is notification-only, never an account.
+    # None keeps proof until revoked; a positive day count opts into expiry.
+    'notification_contact_token_days': None,
+    'unverified_subscription_days': 30,
+    # Trust forwarded client addresses only behind a proxy you control.
     'deletion_hooks': [],
 }
 

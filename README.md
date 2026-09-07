@@ -128,9 +128,187 @@ email-only accounts and generic verified notification subscriptions, then run
 `onramp migrate enable_accounts`. Built-in routes live under `/api/auth`,
 `/api/account`, and `/api/notifications/subscriptions`. Signup is always
 explicit; verifying a notification never creates an account. Codes and tokens
-are stored as digests, attempts are rate-limited, native sessions use secure
-storage, web can use HttpOnly cookies, and development mail goes to the ignored
-`.onramp/dev-mail-outbox.jsonl`. Resend is the default production provider.
+are stored as digests, resend and incorrect-code limits are database-atomic,
+native sessions use secure storage, web can use HttpOnly cookies, and
+development mail goes to the ignored `.onramp/dev-mail-outbox.jsonl`. Resend is
+the default production provider.
+
+OnRamp verifies the user's emailed code itself; Resend only delivers the
+message. No separate email-verification service or inbound email webhook is
+needed. Development/test uses the local outbox even if `RESEND_API_KEY` is set,
+unless `AUTH.email_sender` explicitly supplies a custom sender.
+
+Check or test delivery from the project root:
+
+```bash
+onramp email --check
+onramp email test you@your-domain.com                  # preview only
+onramp email test you@your-domain.com --send           # local outbox in development
+onramp email --check --environment staging
+onramp email test you@your-domain.com --environment staging --send
+# A real production test also requires --confirm-production.
+```
+
+The check reads the active settings/environment, never contacts a provider,
+and does not connect to or change the database. It checks authentication
+secrets, the public action URL, and sender/key configuration without printing
+secrets. It cannot prove API-key validity, DNS verification, or inbox delivery.
+The test sends one non-verification message through the normal sender only when
+`--send` is explicit; it never creates an account, subscription, or remembered
+email permission. A custom sender overrides the local outbox and is not invoked
+by checks or previews. Passing checks does not validate custom sender code.
+
+For hosted delivery, verify your sending domain in Resend and set a
+domain-scoped sending-access `RESEND_API_KEY`, `ONRAMP_EMAIL_FROM`, a public
+HTTPS `ONRAMP_PUBLIC_URL`, and separate `ONRAMP_AUTH_SECRET` and
+`ONRAMP_IDENTITY_SECRET` values of at least 32 characters. Keep these server-side
+and use separate staging/production configuration. The provider's accepted
+message ID means accepted for delivery, not proof it reached the inbox. Confirm
+receipt in your own mailbox, then run the actual app code-entry flow. See
+[Resend sending domains](https://resend.com/docs/knowledge-base/how-do-I-create-an-email-address-or-sender-in-resend)
+and [sending API keys](https://resend.com/docs/dashboard/api-keys/introduction).
+
+Verification messages include table-based HTML and a plain-text fallback. For
+project branding, set `AUTH['verification_email_renderer']` to a synchronous
+`module.callable` reference. It accepts a frozen `VerificationEmailContext`
+(`purpose`, `code`, `app_name`, `expires_minutes`, `public_url`, `manage_url`)
+and returns `EmailTemplate(subject=..., text=..., html=...)`, both imported from
+`onramp.auth.email_templates`. Keep this function presentation-only: escape all
+dynamic HTML, use safe absolute links, and do not perform I/O or send mail. It
+receives no recipient address, account token, or provider secret. Returning a
+template keeps the normal development outbox and hosted provider; this differs
+from `AUTH.email_sender`, which replaces delivery itself. An invalid renderer
+fails closed without exposing its exception or sending a partial message.
+
+The default template distinguishes notification proof from account creation,
+sign-in, and deletion, displays the configured code lifetime, and keeps the code
+out of the email subject. Projects may omit the pending-request manage link in
+verification templates; this does not remove signed unsubscribe links from
+actual notification deliveries. Test every purpose and inspect the `html` and
+`text` fields in the local outbox before testing real delivery. Mail-client
+rendering should use inline styles, tables, and system fonts, not scripts,
+flexbox, or framework-specific web CSS.
+
+Notification batteries also include retry-safe transactional delivery, a
+delivery ledger, signed per-subscription unsubscribe links, and privacy-safe
+aggregate reporting. An application may set
+`AUTH['notification_subscription_validator']` to a full
+`module.callable` reference. The callable receives `payload`, `account`, a
+bounded `request_context`, and `app_dir`, and returns the normalized payload;
+it can reject application-specific resources or assign a
+`canonical_resource_id`. Generic subscription JSON rejects unknown top-level
+fields and is limited by `AUTH['notification_request_bytes']` (16 KiB by
+default). Metadata has its own `notification_metadata_bytes` limit.
+
+Anonymous subscription requests without remembered proof always return the same
+`202` shape and require a fresh emailed proof, even when that address previously
+requested the same resource. An authenticated account or a valid remembered
+notification token can subscribe immediately. Successful verification and
+immediate verified subscriptions return the signed `unsubscribe_url`; unproved
+intake never exposes it. The verification email
+also contains that manage link, so a pending request can be cancelled before
+verification. Cancelling clears the plaintext contact and account link, removes
+outstanding verification codes, and preserves only the contact digest needed
+for suppression and aggregate history until a fresh verified request restores
+consent. Verified responses also include a signed relative `unsubscribe_path`
+so native clients can resolve the action against their platform-specific API
+base instead of trying to open a desktop loopback URL.
+
+Clients may opt in to remembering notification email proof by sending
+`remember_email: true` to `POST /api/notifications/subscriptions/verify`. After
+successful verification and the ready hook, its response includes
+`notification_token` and `notification_token_expires_at`. This opaque 256-bit
+capability has the distinct `onramp_notify_` prefix and only its digest is stored
+in `NotificationContactToken`. By default it has no expiry:
+`AUTH['notification_contact_token_days']` is `None`, the stored `expires_at` is
+NULL, and `notification_token_expires_at` is explicitly `null` in the response.
+It remains valid until revoked. Applications may opt into a fixed lifetime by
+setting a positive day count; the response then includes an ISO expiry timestamp
+and reuse never extends it. Clients should let the server decide validity,
+including for previously issued tokens whose lifetime has since been migrated.
+Store it privately on the device and never include it in logs, email, URLs, or
+account authorization. It does not create an account or session.
+
+For later subscription requests, keep the email in the JSON body and provide the
+token through `X-OnRamp-Notification-Token`. It covers resources and providers
+within the original resource type, normalized email, and runtime environment.
+A valid token returns a verified `200` response without another email code;
+an invalid, expired, revoked, or mismatched token returns `401` with code
+`notification_token_invalid` before subscription persistence. Clear that token
+and let the user request a new email code. A signed-in account takes precedence.
+`POST /api/notifications/contact/revoke` with the same header idempotently forgets
+that device capability in the current environment and returns `{"revoked": true}`.
+It leaves existing notification consent in place; cancelling a subscription is
+a separate action. A later explicit request with valid remembered proof can
+restore a cancelled subscription's consent. Revocation is serialized with
+subscription persistence so an already-authorized request can finish before
+revocation, while requests authorized afterwards fail.
+
+Applications that must react immediately after proof can configure
+`AUTH['notification_subscription_ready_hook'] = 'module.callable'`. The async or
+sync callable receives `subscription`, `app_dir`, and the same bounded
+`request_context` as the validator. It runs after persistence for verified and
+authenticated requests. Errors propagate, and the verification code remains
+usable so the client can retry; therefore the hook must itself be idempotent.
+
+Account and notification request and verification routes have configurable
+client-address limits (`auth_ip_hourly_limit` and
+`notification_ip_hourly_limit`). Atomic database-backed buckets share counts
+across workers and restarts, scoped by environment and endpoint. Only an HMAC
+client identifier, counter and expiry are stored, not a raw IP address. Keep
+production edge protection as well, especially against distributed attacks.
+Routes use the ASGI client address; configure `ONRAMP_FORWARDED_ALLOW_IPS` only
+for explicitly trusted Uvicorn ingress proxies. Application routes never parse
+untrusted forwarded headers themselves. Until proxy trust is configured,
+clients behind the same ingress conservatively share a limit.
+
+Inspect, maintain, preview, and send notifications from a project root:
+
+```bash
+onramp notifications report --resource-type model
+onramp notifications cleanup --unverified-days 30
+onramp notifications dispatch model-release-42 \
+  --resource-type model --subject "Your model is ready" \
+  --text-file email.txt
+onramp notifications dispatch model-release-42 \
+  --resource-type model --subject "Your model is ready" \
+  --text-file email.txt --unnotified-only --send
+onramp notifications anonymize person@example.com
+```
+
+Dispatch previews by default; `--send` is required to contact recipients.
+Event keys identify application-global logical events. The same recipient and
+event are delivered only once per environment even when several source
+resources point to it, and retries reuse the provider idempotency key. Set
+`ONRAMP_PUBLIC_URL` (for example, `https://api.example.com`) in staging and
+production so messages can include the confirmation-based unsubscribe link.
+Hosted action URLs must use HTTPS and cannot contain credentials, a query, or a
+fragment; plain HTTP is accepted only for localhost in development or tests.
+Those signed links intentionally do not expire and remain replay-idempotent;
+rotating `ONRAMP_AUTH_SECRET` invalidates old links. Unsubscribing withdraws
+active demand, and resubscription requires an authenticated account, valid
+remembered notification proof, or fresh email verification.
+
+Use `--unnotified-only` for one-time availability requests that should not
+receive later versions after their first successful notification. Subscription
+identity and delivery idempotency both include the runtime environment, so an
+accidentally shared database cannot merge staging and production records.
+
+Cleanup removes expired email challenges and remembered notification tokens,
+abandoned unverified requests, and
+database-backed challenge counters inactive for 24 hours; verified history
+remains. Challenge counters make resend and incorrect-code limits atomic across
+workers. Account deletion and the anonymize command revoke all matching
+remembered capabilities; anonymization removes contact data, delivery hashes,
+and challenge counters while retaining anonymous aggregate history. After upgrading a
+project when framework-owned account or notification models have changed, run
+`onramp migrate framework_notifications` in development and commit the
+generated migration before deployment.
+If an existing SQLite database changes a table-level `unique_together`, inspect
+the generated migration before applying it: SQLite represents that constraint
+with an implicit auto-index that cannot be removed with `DROP INDEX`. Create the
+new constraint in the original unapplied migration for a fresh project, or use
+a reviewed table-rebuild migration for a database that already contains data.
 
 ## Production deployment
 
@@ -152,6 +330,13 @@ portable container files and a `render.yaml` Blueprint without overwriting
 existing files. The Blueprint provisions the API, PostgreSQL, and a static web
 site when those components exist. `onramp deploy init container` prepares only
 provider-neutral artifacts.
+
+When accounts are enabled, a new Render Blueprint generates independent auth
+and identity secrets, derives `ONRAMP_PUBLIC_URL` from the service's external
+URL, and prompts for `RESEND_API_KEY` and `ONRAMP_EMAIL_FROM`. Projects with an
+`AUTH.email_sender` hook own their provider configuration instead. Deployment
+preflight rejects missing or insecure AUTH configuration and wildcard hosted
+CORS origins; configure exact browser origins for staging and production.
 
 When both targets are configured, interactive `onramp deploy` and `onramp
 deploy --check` ask whether to operate on the backend, web frontend, or both.

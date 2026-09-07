@@ -68,6 +68,88 @@ after enabling it. Development verification messages go to the ignored
 Notification verification never creates an account. Manage classifications and
 roles with `onramp account classify` and `onramp account role`.
 
+OnRamp verifies the emailed code; Resend only delivers it. You do not need an
+additional verification service. `onramp email --check` inspects the current
+configuration without sending email or connecting to a database. Use
+`onramp email test you@your-domain.com` for a preview, then add `--send` to send
+one delivery-test message (to the local outbox in development). A production
+test requires both `--send` and `--confirm-production`. No test message creates
+an account, subscription, or verified-email token. Checks cannot confirm DNS,
+API-key validity, or inbox delivery; test actual code entry in the app as well.
+In staging/production, verify your sending domain in Resend and set
+`ONRAMP_EMAIL_FROM`, `RESEND_API_KEY`, and an HTTPS `ONRAMP_PUBLIC_URL` in the
+backend's secret environment. `AUTH.email_sender`, if configured, overrides
+the outbox even in development; checks never import or invoke it.
+
+The same development outbox handles application notifications. Set
+`ONRAMP_PUBLIC_URL` in hosted environments for signed unsubscribe links. Use
+`onramp notifications report` to inspect aggregate counts,
+`onramp notifications cleanup` to remove expired challenges and abandoned
+unverified requests, and `onramp notifications anonymize <email>` to remove a
+notification contact's identifiers while retaining anonymous history.
+`onramp notifications dispatch ...` is a preview unless `--send` is explicit;
+stable event keys prevent duplicate email across retries and provider-specific
+subscriptions in the same environment. Account and notification request and
+verification routes have configurable client-address limits. Configure a
+production edge limit as well for distributed traffic: the built-in limiter
+uses atomic database counters shared across workers and does not require Redis.
+Its one-hour buckets contain only an environment/endpoint-scoped HMAC, count,
+and expiry, never a raw client IP. Requests clean up at most 100 expired buckets;
+`onramp notifications cleanup` removes at most 10,000 additional expired buckets
+per run. Existing AUTH-enabled projects must create/apply the migration for
+`ClientRequestRateLimit` before upgrading deployed workers.
+
+Client addresses come only from the ASGI server. `onramp start` defaults
+`ONRAMP_FORWARDED_ALLOW_IPS` to `127.0.0.1`; configure the actual trusted ingress
+addresses/networks after verifying your host's proxy setup. Never use `*` unless
+direct access is impossible and the ingress sanitizes forwarding headers.
+Untrusted proxy traffic shares the proxy's conservative client limit. OnRamp
+does not directly interpret `X-Forwarded-For`, even if a legacy project has
+`trust_notification_proxy_headers` enabled.
+
+Anonymous requests without remembered proof require a fresh email code.
+Verification emails and
+successful verified responses include a manage link; cancelling clears the
+plaintext contact and outstanding codes while preserving the suppression
+digest. Native clients should resolve the proof-gated `unsubscribe_path`
+against their platform API base; the absolute email URL is HTTPS-only outside
+development. Add `--unnotified-only` when a request should receive only its first
+matching release. Runtime environment is part of both subscription identity and
+delivery idempotency. Cleanup also removes database-backed challenge-limit rows
+after 24 inactive hours; anonymization removes them immediately for that contact.
+
+To remember notification email proof on a device, send `remember_email: true`
+with the subscription verification request. A successful response includes
+`notification_token` and `notification_token_expires_at` after the ready hook
+finishes. Store the token privately and send it only in
+`X-OnRamp-Notification-Token` on later subscription requests, keeping the email in
+the JSON body. This proof spans resources and providers within the same resource
+type and environment; it creates no account or session. Tokens have no expiry
+by default (`AUTH['notification_contact_token_days'] = None`), and the response
+explicitly includes `notification_token_expires_at: null`. A positive day count
+opts into a fixed lifetime and an ISO expiry timestamp without renewal on
+reuse. Let the server decide validity, including for legacy tokens whose
+lifetime has since been migrated. Invalid proof returns
+`401 notification_token_invalid`; clear it and
+allow a fresh code request. `POST /api/notifications/contact/revoke` with that
+header forgets the device proof without cancelling subscriptions. Cleanup
+deletes only finite expired tokens; account deletion and contact anonymization revoke all
+matching tokens. Anonymous requests without a token retain the same `202` shape
+regardless of prior membership. Never put these tokens in logs, email, URLs,
+account authorization, or shared application state.
+
+Applications can configure a
+`AUTH['notification_subscription_validator'] = 'module.callable'` hook to
+restrict allowed resources and resolve `canonical_resource_id`. The hook sees
+only a bounded request context; proxy headers remain untrusted unless explicitly
+enabled. A `notification_subscription_ready_hook` receives the persisted
+subscription, app directory, and bounded request context after verification;
+failures remain retriable, so keep it idempotent. If an OnRamp upgrade changes
+framework-owned models, generate and commit a migration with `onramp migrate
+framework_notifications` before deploying. For an existing SQLite table, a
+table-level unique-constraint change needs a reviewed table-rebuild migration;
+SQLite's implicit auto-index cannot be removed with `DROP INDEX`.
+
 Prepare and deploy the configured production targets with:
 
 ```bash
@@ -94,6 +176,11 @@ Environment-specific automation may instead use variables such as
 Deployment topology belongs in `onramp.toml`; backend runtime behavior remains
 in `app/settings.py`, and secret values stay in the provider environment or an
 ignored local `.env` loaded by your shell or container tool.
+When `AUTH.enabled` is true, the Render Blueprint generates separate signing
+and identity secrets, derives the public action URL, and prompts for the Resend
+key and verified sender. A custom `AUTH.email_sender` owns its own provider
+configuration. Hosted CORS must list exact origins; wildcard origins fail the
+deployment check.
 Production hosts run `onramp start`, which reads `PORT`, serves liveness at
 `/health/live`, checks the database at `/health/ready`, and shuts down
 gracefully.

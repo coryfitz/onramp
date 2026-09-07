@@ -91,8 +91,57 @@ change.
   before the web frontend.
 - Deployment topology belongs in `onramp.toml`, runtime application behavior in
   `app/settings.py`, and secrets in the provider environment.
+- AUTH-enabled deployment scaffolds must provision distinct auth/identity
+  secrets, a secure public action URL, and a configured email sender. Hosted
+  backend checks reject wildcard CORS origins.
 - Preserve legacy backend-only `onramp.toml` files and represent a combined
   frontend/backend container as one full-application target without prompting.
+
+## Account and notification invariants
+
+- Verification email customization is presentation-only through
+  `AUTH.verification_email_renderer`: preserve the normal outbox/provider,
+  escape dynamic HTML, include plain text, keep codes out of subjects, and
+  distinguish notification proof from account creation, sign-in, and deletion.
+  Never drop the signed unsubscribe footer from actual notification deliveries.
+- `onramp email --check` and email-test previews must not contact a provider,
+  invoke custom senders, connect to the database, or repair project files.
+  Sending requires `--send` and, in production, `--confirm-production`.
+  Provider acceptance is not inbox delivery or verification of the recipient;
+  never print provider response bodies, secrets, or codes in hosted diagnostics.
+- Notification intake must reject unknown or oversized payloads before
+  persistence and pass only bounded request context to optional application
+  validators. Client-address limits must use database-atomic, environment-scoped
+  HMAC buckets shared across workers; never store raw addresses or fall back to
+  process memory. Keep expiry cleanup bounded. Only the ASGI server may resolve
+  forwarding headers using explicitly trusted proxy addresses; never parse
+  client-supplied `X-Forwarded-For` inside application routes. These application
+  limits do not replace production edge throttling against distributed traffic.
+- Transactional event keys are application-global. Deduplicate delivery by
+  recipient digest, event key, and environment; preserve provider idempotency
+  across retries and preview dispatch unless an operator explicitly requests a
+  send.
+- Never deliver to unverified, suppressed, or anonymized subscriptions.
+  Unsubscribe links show confirmation before mutation, are signed and
+  replay-idempotent, and withdrawing consent removes active demand eligibility.
+- Post-verification notification hooks are retriable after persistence and must
+  be idempotent. Anonymous intake without valid remembered notification proof
+  must require fresh proof and never reveal prior membership, suppression state,
+  or a signed management capability.
+- Remembered email proof is notification-only: issue an opaque, digest-stored
+  capability only after successful code verification and the ready hook, bind it
+  to email, resource type, and environment, and never use it as an account
+  session. Proof has no expiry by default and remains revocable; an explicitly
+  configured positive lifetime has a fixed expiry that reuse never extends.
+  Validate its separate header atomically with persistence;
+  revocation must either win first or wait for the authorized write. Account
+  deletion and contact anonymization revoke matching remembered capabilities.
+- Account deletion and notification-contact anonymization must clear recipient
+  identifiers from subscriptions and delivery ledgers while retaining only
+  privacy-safe aggregate history.
+- Challenge resend and attempt limits must use database-atomic claims so
+  concurrent workers cannot bypass them. Cancellation invalidates pending proof
+  before consent can be restored, and verification is also client-rate-limited.
 
 ## Native launcher invariants
 
