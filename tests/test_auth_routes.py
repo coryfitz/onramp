@@ -124,6 +124,14 @@ def test_builtin_auth_cookie_and_notification_routes(tmp_path, monkeypatch):
         assert "Stop this notification?" in confirmation.text
         assert confirmation.headers["referrer-policy"] == "no-referrer"
         assert "default-src 'none'" in confirmation.headers["content-security-policy"]
+        invalid_confirmation = client.get(
+            "/api/notifications/unsubscribe", params={"token": "invalid-private-token"},
+            headers={"accept": "text/html"},
+        )
+        assert invalid_confirmation.status_code == 400
+        assert invalid_confirmation.headers["referrer-policy"] == "no-referrer"
+        assert invalid_confirmation.headers["cache-control"] == "no-store"
+        assert "invalid-private-token" not in invalid_confirmation.text
         oversized_form = client.post(
             "/api/notifications/unsubscribe",
             content="token=" + ("x" * 9_000),

@@ -262,6 +262,11 @@ for explicitly trusted Uvicorn ingress proxies. Application routes never parse
 untrusted forwarded headers themselves. Until proxy trust is configured,
 clients behind the same ingress conservatively share a limit.
 
+OnRamp redacts query strings from Uvicorn's standard access log, so signed
+unsubscribe URLs do not disclose their capabilities there. Request routing and
+query parsing are unchanged. Keep equivalent redaction at hosting proxies and
+in any custom request logging; do not log email codes, headers, or request bodies.
+
 Inspect, maintain, preview, and send notifications from a project root:
 
 ```bash

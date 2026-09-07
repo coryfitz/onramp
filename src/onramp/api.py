@@ -31,7 +31,15 @@ async def api_exception_handler(_request: Request, error: APIError) -> JSONRespo
     payload: dict[str, Any] = {"error": str(error), "code": error.code}
     if error.details:
         payload["details"] = error.details
-    return JSONResponse(payload, status_code=error.status)
+    return JSONResponse(
+        payload,
+        status_code=error.status,
+        headers={
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 async def bounded_body(request: Request, *, maximum_bytes: int) -> bytes:

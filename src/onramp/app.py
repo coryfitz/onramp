@@ -17,6 +17,7 @@ from typing import List
 
 from onramp.api import APIError, api_exception_handler
 from onramp.api_explorer import api_explorer_html, build_openapi_document
+from onramp.logging_filters import install_access_log_redaction
 from onramp.db.manager import (
     database_is_ready,
     database_lifespan,
@@ -403,6 +404,9 @@ class OnRamp:
     
     def create_app(self):
         """Create the Starlette application"""
+        # Uvicorn configures logging before importing its ASGI application.
+        # Also reinstall for explicit factories after logging reconfiguration.
+        install_access_log_redaction()
         self.discover_file_routes()
         from onramp.auth.config import auth_enabled
         from onramp.auth.routes import auth_routes
