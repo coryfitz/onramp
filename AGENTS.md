@@ -104,6 +104,10 @@ change.
   simulator or AVD. Keep that cache project-local and disposable, verify the
   installed app and target identity before reuse, and retain `--rebuild` as an
   explicit full-build escape hatch. Application source remains Metro-served.
+  During an active native run, watch the same fingerprint inputs and warn once
+  when they change that Fast Refresh cannot link native modules; a normal rerun
+  must rebuild only the affected platform, with `--rebuild` reserved as a
+  fallback.
 - Default iOS repair preserves `Podfile.lock`; only `--fresh` may remove it.
 - Native project names are normalized and must remain stable after generation.
 - `onramp mobile` launches iOS and Android with separate Metro servers while
