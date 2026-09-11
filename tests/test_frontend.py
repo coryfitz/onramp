@@ -131,6 +131,60 @@ def test_run_frontend_forwards_rebuild(tmp_path, monkeypatch):
     assert captured["command"][-1] == "--rebuild"
 
 
+@pytest.mark.parametrize("platform", ["ios", "android", "mobile"])
+@pytest.mark.parametrize("blocking", [True, False])
+@pytest.mark.parametrize("force_updates", [True, False])
+@pytest.mark.parametrize("source_checkout", [True, False])
+def test_emulator_update_consent_through_python_bridge(
+    tmp_path, monkeypatch, platform, blocking, force_updates, source_checkout,
+):
+    local_bin = tmp_path / "onramp-js.js"
+    if source_checkout:
+        local_bin.touch()
+    monkeypatch.setattr(frontend, "_local_frontend_bin", lambda: local_bin)
+    monkeypatch.setattr(frontend, "_frontend_package_version", lambda: "9.8.7")
+    monkeypatch.setattr(frontend, "_frontend_exec_prefix", lambda: tmp_path / "npm")
+    calls = []
+    process = SimpleNamespace(poll=lambda: None)
+
+    def fake_spawn(command, **kwargs):
+        calls.append((command, kwargs))
+        return process
+
+    monkeypatch.setattr(frontend.subprocess, "run", fake_spawn)
+    monkeypatch.setattr(frontend.subprocess, "Popen", fake_spawn)
+    runner = frontend.run_frontend if blocking else frontend.start_frontend
+    options = {"force_emulator_updates": True} if force_updates else {}
+
+    result = runner(platform, tmp_path, env={"PATH": "test"}, **options)
+
+    assert result is (True if blocking else process)
+    command, kwargs = calls[0]
+    assert kwargs["cwd"] == tmp_path
+    assert kwargs["env"] == {"PATH": "test", "ONRAMP_PYTHON_WRAPPER": "1"}
+    prefix = ["node", str(local_bin)] if source_checkout else [
+        "npm", "exec", "--yes", "--prefix", str(tmp_path / "npm"),
+        "--package", "onramp-js@9.8.7", "--", "onramp-js",
+    ]
+    assert command == [
+        *prefix, "run", platform, "--output", str(tmp_path),
+        *(["--force"] if force_updates else []),
+    ]
+    assert "--rebuild" not in command
+    assert "--fresh" not in command
+
+
+@pytest.mark.parametrize("runner", [frontend.run_frontend, frontend.start_frontend])
+def test_frontend_bridge_rejects_emulator_updates_for_web(tmp_path, monkeypatch, runner):
+    def unexpected_spawn(*_args, **_kwargs):
+        pytest.fail("Invalid flags must not launch a subprocess")
+
+    monkeypatch.setattr(frontend.subprocess, "run", unexpected_spawn)
+    monkeypatch.setattr(frontend.subprocess, "Popen", unexpected_spawn)
+    with pytest.raises(ValueError, match="only supported for ios, android, and mobile"):
+        runner("web", tmp_path, force_emulator_updates=True)
+
+
 def test_mobile_is_forwarded_through_the_python_bridge(tmp_path, monkeypatch):
     captured = {}
 

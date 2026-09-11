@@ -120,10 +120,13 @@ def run_frontend(
     watch_diagnostics: bool = False,
     rebuild: bool = False,
     environment: str | None = None,
+    force_emulator_updates: bool = False,
 ) -> bool:
     """Prepare and run a frontend platform with onramp-js."""
     if platform not in {"web", "ios", "android", "mobile"}:
         raise ValueError(f"Unsupported frontend run platform: {platform}")
+    if force_emulator_updates and platform == "web":
+        raise ValueError("Emulator updates are only supported for ios, android, and mobile")
 
     output_path = Path(output_dir).resolve()
     arguments = ["run", platform, "--output", str(output_path)]
@@ -137,6 +140,8 @@ def run_frontend(
         arguments.append("--watch-diagnostics")
     if rebuild:
         arguments.append("--rebuild")
+    if force_emulator_updates:
+        arguments.append("--force")
 
     return _run_frontend_command(
         arguments,
@@ -155,10 +160,13 @@ def start_frontend(
     watch_diagnostics: bool = False,
     rebuild: bool = False,
     environment: str | None = None,
+    force_emulator_updates: bool = False,
 ) -> subprocess.Popen | None:
     """Start an onramp-js platform command without blocking Python."""
     if platform not in {"web", "ios", "android", "mobile"}:
         raise ValueError(f"Unsupported frontend run platform: {platform}")
+    if force_emulator_updates and platform == "web":
+        raise ValueError("Emulator updates are only supported for ios, android, and mobile")
 
     output_path = Path(output_dir).resolve()
     arguments = ["run", platform, "--output", str(output_path)]
@@ -172,6 +180,8 @@ def start_frontend(
         arguments.append("--watch-diagnostics")
     if rebuild:
         arguments.append("--rebuild")
+    if force_emulator_updates:
+        arguments.append("--force")
 
     try:
         return subprocess.Popen(
@@ -207,6 +217,22 @@ def repair_frontend(
         output_path,
         env,
         f"{platform} repair",
+    )
+
+
+def storage_frontend(
+    *,
+    clean: bool = False,
+    include_other_projects: bool = False,
+    cwd: str | Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> bool:
+    """Inspect or prune disposable mobile outputs without starting services."""
+    arguments = ["storage", "--clean" if clean else "--check"]
+    if include_other_projects:
+        arguments.append("--include-other-projects")
+    return _run_frontend_command(
+        arguments, Path(cwd or os.getcwd()).resolve(), env, "storage maintenance",
     )
 
 

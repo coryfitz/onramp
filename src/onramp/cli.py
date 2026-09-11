@@ -40,6 +40,7 @@ from .frontend import (
     repair_frontend,
     run_frontend,
     start_frontend,
+    storage_frontend,
 )
 from .project import atomic_write, package_version, write_project_manifest
 from .upgrade import upgrade_to_version
@@ -434,6 +435,7 @@ def run_ios(
     watch_diagnostics: bool = False,
     rebuild: bool = False,
     environment: str | None = None,
+    force_emulator_updates: bool = False,
 ):
     """Run iOS simulator; if BACKEND=True also start the backend dev server."""
     if not os.path.exists(BUILD_DIR):
@@ -456,6 +458,7 @@ def run_ios(
             watch_diagnostics=watch_diagnostics,
             rebuild=rebuild,
             environment=selected_environment,
+            **({"force_emulator_updates": True} if force_emulator_updates else {}),
         )
         if not ios_process:
             return False
@@ -475,6 +478,7 @@ def run_ios(
             watch_diagnostics=watch_diagnostics,
             rebuild=rebuild,
             environment=selected_environment,
+            **({"force_emulator_updates": True} if force_emulator_updates else {}),
         )
 
 
@@ -484,6 +488,7 @@ def run_android(
     watch_diagnostics: bool = False,
     rebuild: bool = False,
     environment: str | None = None,
+    force_emulator_updates: bool = False,
 ):
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
@@ -505,6 +510,7 @@ def run_android(
             watch_diagnostics=watch_diagnostics,
             rebuild=rebuild,
             environment=selected_environment,
+            **({"force_emulator_updates": True} if force_emulator_updates else {}),
         )
         if not android_process:
             return False
@@ -524,6 +530,7 @@ def run_android(
         watch_diagnostics=watch_diagnostics,
         rebuild=rebuild,
         environment=selected_environment,
+        **({"force_emulator_updates": True} if force_emulator_updates else {}),
     )
 
 
@@ -533,6 +540,7 @@ def run_mobile(
     watch_diagnostics: bool = False,
     rebuild: bool = False,
     environment: str | None = None,
+    force_emulator_updates: bool = False,
 ):
     """Run the iOS and Android apps with one shared backend process."""
     if not os.path.exists(BUILD_DIR):
@@ -555,6 +563,7 @@ def run_mobile(
             watch_diagnostics=watch_diagnostics,
             rebuild=rebuild,
             environment=selected_environment,
+            **({"force_emulator_updates": True} if force_emulator_updates else {}),
         )
         if not mobile_process:
             return False
@@ -574,6 +583,7 @@ def run_mobile(
         watch_diagnostics=watch_diagnostics,
         rebuild=rebuild,
         environment=selected_environment,
+        **({"force_emulator_updates": True} if force_emulator_updates else {}),
     )
 
 
@@ -1353,10 +1363,11 @@ def main():
   {FRAMEWORK_NAME.lower()} run [--port 8000]
   {FRAMEWORK_NAME.lower()} start [--host 0.0.0.0] [--port 8000]
   {FRAMEWORK_NAME.lower()} web
-  {FRAMEWORK_NAME.lower()} ios [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild]
-  {FRAMEWORK_NAME.lower()} android [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild]
-  {FRAMEWORK_NAME.lower()} mobile [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild]
+  {FRAMEWORK_NAME.lower()} ios [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild] [--force]
+  {FRAMEWORK_NAME.lower()} android [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild] [--force]
+  {FRAMEWORK_NAME.lower()} mobile [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild] [--force]
   {FRAMEWORK_NAME.lower()} doctor [web|ios|android|mobile|all]
+  {FRAMEWORK_NAME.lower()} storage [--check | --clean] [--include-other-projects]
   {FRAMEWORK_NAME.lower()} repair:ios [--fresh]
   {FRAMEWORK_NAME.lower()} upgrade [--check] [--to VERSION]
   {FRAMEWORK_NAME.lower()} prepmigrations [name]
@@ -1381,6 +1392,8 @@ def main():
 The --port option controls the Python backend. --metro-port controls the
 React Native bundler. --watch-diagnostics prints source paths that trigger
 Fast Refresh. --rebuild forces native apps to rebuild and reinstall.
+For ios, android, and mobile, --force accepts available emulator updates
+without prompting. First-time installations and destructive actions still ask.
 Use --environment development, staging, or production to select one shared
 backend, web, and native runtime profile.
 repair:ios preserves Podfile.lock unless --fresh is set.
@@ -1419,6 +1432,11 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             help="Force native apps to rebuild and reinstall",
         )
         parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Accept emulator updates without prompting (ios, android, mobile only)",
+        )
+        parser.add_argument(
             "--fresh",
             action="store_true",
             help="Allow repair:ios to recreate Podfile.lock",
@@ -1426,8 +1444,10 @@ upgrade creates recoverable backups and never overwrites modified managed files.
         parser.add_argument(
             "--check",
             action="store_true",
-            help="Run a read-only upgrade, deployment, or email preflight",
+            help="Run a read-only upgrade, deployment, email, or storage preflight",
         )
+        parser.add_argument("--clean", action="store_true", help="Remove eligible disposable development output (storage only)")
+        parser.add_argument("--include-other-projects", action="store_true", help="Include old Xcode output for other deleted projects (storage only)")
         parser.add_argument(
             "--to",
             dest="target_version",
@@ -1485,8 +1505,15 @@ upgrade creates recoverable backups and never overwrites modified managed files.
         parser.add_argument("--web-only", action="store_true", help="Run web without backend")
         args = parser.parse_args()
 
-        # Email diagnostics must not trigger unrelated project repairs.
-        if args.command != "email":
+        if args.force and args.command not in {"ios", "android", "mobile"}:
+            parser.error("--force is only supported for ios, android, and mobile")
+        if (args.clean or args.include_other_projects) and args.command != "storage":
+            parser.error("--clean and --include-other-projects are only supported for storage")
+        if args.command == "storage" and (args.name or args.extra or (args.check and args.clean)):
+            parser.error("Use onramp storage [--check | --clean] [--include-other-projects]")
+
+        # Read-only service/storage diagnostics must not repair project files.
+        if args.command not in {"email", "storage"}:
             _clean_empty_shadow_dirs(PROJECT_ROOT)
 
         if args.command == "new":
@@ -1543,6 +1570,8 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             }
             if args.environment:
                 run_arguments["environment"] = args.environment
+            if args.force:
+                run_arguments["force_emulator_updates"] = True
             return 0 if run_ios(args.port, **run_arguments) else 1
 
         elif args.command == "android":
@@ -1553,6 +1582,8 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             }
             if args.environment:
                 run_arguments["environment"] = args.environment
+            if args.force:
+                run_arguments["force_emulator_updates"] = True
             return 0 if run_android(args.port, **run_arguments) else 1
 
         elif args.command == "mobile":
@@ -1563,11 +1594,21 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             }
             if args.environment:
                 run_arguments["environment"] = args.environment
+            if args.force:
+                run_arguments["force_emulator_updates"] = True
             return 0 if run_mobile(args.port, **run_arguments) else 1
 
         elif args.command == "web":
             return 0 if run_web(
                 with_backend=False, environment=args.environment
+            ) else 1
+
+        elif args.command == "storage":
+            return 0 if storage_frontend(
+                clean=args.clean,
+                include_other_projects=args.include_other_projects,
+                cwd=original_cwd,
+                env=ensure_node_env(),
             ) else 1
 
         elif args.command == "doctor":

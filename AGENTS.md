@@ -149,6 +149,11 @@ change.
   responds. Select a free port and pass it through to the React Native CLI.
 - `--port` belongs to the Python backend; `--metro-port` belongs to Metro.
 - `--watch-diagnostics` must report exact project-relative native source events.
+- `--force` on `ios`, `android`, and `mobile` preapproves emulator updates only;
+  never treat it as blanket consent for first installs, architecture repairs,
+  display-only replacements, or deleting devices, images, runtimes, and data.
+  Preserve compatibility checks, rejected-download cooldowns, and `--rebuild`
+  as the separate app-rebuild flag.
 - Unchanged native inputs may reuse an app already installed on the same
   simulator or AVD. Keep that cache project-local and disposable, verify the
   installed app and target identity before reuse, and retain `--rebuild` as an
@@ -195,6 +200,19 @@ change.
   device data as part of runtime cleanup or Android images still referenced
   by an AVD. Only obsolete OnRamp command-line-tool copies may be pruned
   automatically after validating their replacement; retain unrelated tools.
+- Native CLI launches perform bounded, once-daily disposable-storage maintenance.
+  Automatically prune only marked OnRamp temporary work owned by a definitely
+  dead process after 24 hours, and verified Xcode DerivedData for deleted
+  OnRamp temporary workspaces after seven days. Preserve symlinked, recent,
+  active, ambiguous, and unmarked directories. Never delete the editable
+  project `build/`, current DerivedData, dependency downloads, Pods, backups,
+  simulators, or user data through this maintenance path.
+- `onramp storage` and `onramp storage --check` are read-only storage inventories;
+  `--clean` explicitly applies disposable-output cleanup. Other deleted projects'
+  Xcode output requires `--include-other-projects`; it never broadens cleanup to
+  existing projects or device data. Shared-runtime/image/AVD cleanup stays a
+  separate, confirmed native-preflight action, including when the newest
+  replacement is already installed. Keep housekeeping optional and nonfatal.
 - Treat Android's namespace, base application ID, and variant application ID
   as distinct values. Debug `applicationIdSuffix` values must be included when
   checking, caching, and launching an installed app, while the activity class

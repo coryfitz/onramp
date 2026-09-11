@@ -614,6 +614,62 @@ def test_mobile_coordinates_both_apps_with_one_backend(tmp_path, monkeypatch):
     cli.spawned_processes.clear()
 
 
+@pytest.mark.parametrize("platform", ["ios", "android", "mobile"])
+@pytest.mark.parametrize("backend_enabled", [True, False])
+@pytest.mark.parametrize("force_updates", [True, False])
+def test_native_runners_forward_emulator_update_consent_only_when_requested(
+    tmp_path, monkeypatch, platform, backend_enabled, force_updates,
+):
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    process = SimpleNamespace(poll=lambda: None)
+    calls = []
+    backend_calls = []
+    monkeypatch.setattr(cli, "BUILD_DIR", str(build_dir))
+    monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setattr(cli, "settings", SimpleNamespace(BACKEND=backend_enabled))
+    monkeypatch.setenv("ONRAMP_ENVIRONMENT", "development")
+    monkeypatch.setattr(cli, "ensure_node_env", lambda: {"PATH": "test"})
+    monkeypatch.setattr(cli, "spawned_processes", [])
+
+    def fake_start(selected, output, **kwargs):
+        calls.append(("start", selected, output, kwargs))
+        return process
+
+    def fake_run(selected, output, **kwargs):
+        calls.append(("run", selected, output, kwargs))
+        return True
+
+    monkeypatch.setattr(cli, "start_frontend", fake_start)
+    monkeypatch.setattr(cli, "run_frontend", fake_run)
+    monkeypatch.setattr(
+        cli, "run_uvicorn_with_watch",
+        lambda port, **kwargs: backend_calls.append((port, kwargs)) or True,
+    )
+    options = {"force_emulator_updates": True} if force_updates else {}
+
+    assert getattr(cli, f"run_{platform}")(**options)
+    assert len(calls) == 1
+    mode, selected, output, arguments = calls[0]
+    assert mode == ("start" if backend_enabled else "run")
+    assert selected == platform
+    assert output == str(build_dir)
+    assert arguments == {
+        "app_name": tmp_path.name,
+        "env": {"PATH": "test", "ONRAMP_ENVIRONMENT": "development"},
+        "metro_port": None,
+        "watch_diagnostics": False,
+        "rebuild": False,
+        "environment": "development",
+        **options,
+    }
+    assert cli.spawned_processes == ([process] if backend_enabled else [])
+    assert backend_calls == (
+        [(8000, {"companion_process": process, "open_browser": True})]
+        if backend_enabled else []
+    )
+
+
 def test_backend_watcher_ignores_database_and_directory_changes():
     assert cli._backend_source_filter(None, "/project/app/api/index.py")
     assert not cli._backend_source_filter(None, "/project/app")
@@ -921,6 +977,51 @@ def test_main_dispatches_mobile_command(monkeypatch):
         "watch_diagnostics": True,
         "rebuild": True,
     }
+
+
+@pytest.mark.parametrize("platform", ["ios", "android", "mobile"])
+@pytest.mark.parametrize("force_updates", [True, False])
+def test_main_dispatches_native_force_flag(monkeypatch, platform, force_updates):
+    calls = []
+    monkeypatch.setattr(
+        cli, f"run_{platform}",
+        lambda port, **kwargs: calls.append((port, kwargs)) or True,
+    )
+    arguments = ["onramp", platform, "--environment", "staging"]
+    if force_updates:
+        arguments.append("--force")
+    monkeypatch.setattr(cli.sys, "argv", arguments)
+    monkeypatch.setattr(cli, "_clean_empty_shadow_dirs", lambda *_args: None)
+
+    assert cli.main() == 0
+    assert calls == [(8000, {
+        "metro_port": None,
+        "watch_diagnostics": False,
+        "rebuild": False,
+        "environment": "staging",
+        **({"force_emulator_updates": True} if force_updates else {}),
+    })]
+
+
+@pytest.mark.parametrize("command", [
+    ["new", "example"], ["run"], ["start"], ["web"], ["backend", "off"],
+    ["doctor", "mobile"], ["repair:ios"], ["upgrade"], ["del", "example"],
+    ["deploy"], ["email", "test", "person@example.com"],
+])
+def test_force_is_rejected_for_other_commands_before_project_changes(
+    monkeypatch, capsys, command,
+):
+    monkeypatch.setattr(cli.sys, "argv", ["onramp", *command, "--force"])
+    monkeypatch.setattr(
+        cli, "_clean_empty_shadow_dirs",
+        lambda *_args: pytest.fail("Invalid flags must not trigger project repairs"),
+    )
+
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+
+    assert error.value.code == 2
+    assert "--force is only supported for ios, android, and mobile" in capsys.readouterr().err
 
 
 def test_main_dispatches_backend_command(monkeypatch):
