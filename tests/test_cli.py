@@ -14,6 +14,18 @@ from onramp.db import migrations as migrations_module
 from onramp.project import package_version
 
 
+@pytest.mark.parametrize("flag", ["--version", "-v"])
+def test_version_flags_report_installed_onramp_version(monkeypatch, capsys, flag):
+    monkeypatch.setattr(cli, "package_version", lambda: "9.8.7")
+    monkeypatch.setattr(cli.sys, "argv", ["onramp", flag])
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+
+    assert exit_info.value.code == 0
+    assert capsys.readouterr().out == "onramp 9.8.7\n"
+
+
 def test_is_port_in_use():
     import socket
 

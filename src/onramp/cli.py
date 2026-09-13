@@ -1400,6 +1400,13 @@ repair:ios preserves Podfile.lock unless --fresh is set.
 upgrade creates recoverable backups and never overwrites modified managed files.
 """,
         )
+        parser.add_argument(
+            "-v",
+            "--version",
+            action="version",
+            version=f"%(prog)s {package_version()}",
+            help="Show the installed OnRamp version and exit",
+        )
         parser.add_argument("command", help="The command to run")
         parser.add_argument("name", nargs='?', help="The name of the app directory/migration to be created")
         parser.add_argument("extra", nargs='*', help=argparse.SUPPRESS)
