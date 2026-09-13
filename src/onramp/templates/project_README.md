@@ -34,6 +34,17 @@ Use `--environment development`, `--environment staging`, or
 Frontend profile URLs, display-name suffixes, and identifier suffixes live in
 `build/app.json`.
 
+Add `--force` to `onramp ios`, `onramp android`, or `onramp mobile` to accept
+compatible emulator updates automatically for that run. This downloads available
+updates (potentially several GB), rather than skipping the update check. Initial
+installs, repairs, and display-only replacements still ask for consent.
+`onramp mobile --force` also permanently deletes verified obsolete emulator files
+and eligible old simulator devices with their saved app data. Active/current/newer
+environments, custom Android devices, and uncertain files are preserved. The
+separate `ios --force` and `android --force` commands still ask before cleanup;
+compatibility checks and rejected-download cooldowns remain. Use `--rebuild`
+separately if you want to force rebuilding the app itself.
+
 `BACKEND` in `app/settings.py` controls whether frontend commands also start
 the Python server. The generated default is `False`; the backend scaffold is
 still present and can be enabled later by running `onramp backend` from the

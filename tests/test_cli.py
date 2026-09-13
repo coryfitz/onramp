@@ -38,6 +38,19 @@ def test_is_port_in_use():
     assert not cli.is_port_in_use(port)
 
 
+def test_help_discloses_mobile_force_deletes_obsolete_simulator_data(monkeypatch, capsys):
+    monkeypatch.setattr(cli.sys, "argv", ["onramp", "--help"])
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+
+    assert exit_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "For mobile only, it also deletes verified obsolete simulator" in output
+    assert "eligible devices and their saved app data" in output
+    assert "First-time installations and repairs still ask" in output
+
+
 def test_find_next_available_port(monkeypatch):
     monkeypatch.setattr(cli, "is_port_in_use", lambda port: port in {8000, 8001})
 

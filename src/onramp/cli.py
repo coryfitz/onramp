@@ -1393,7 +1393,9 @@ The --port option controls the Python backend. --metro-port controls the
 React Native bundler. --watch-diagnostics prints source paths that trigger
 Fast Refresh. --rebuild forces native apps to rebuild and reinstall.
 For ios, android, and mobile, --force accepts available emulator updates
-without prompting. First-time installations and destructive actions still ask.
+without prompting. For mobile only, it also deletes verified obsolete simulator
+runtimes, eligible devices and their saved app data, and unreferenced old images.
+Active/current environments are kept. First-time installations and repairs still ask.
 Use --environment development, staging, or production to select one shared
 backend, web, and native runtime profile.
 repair:ios preserves Podfile.lock unless --fresh is set.
@@ -1441,7 +1443,7 @@ upgrade creates recoverable backups and never overwrites modified managed files.
         parser.add_argument(
             "--force",
             action="store_true",
-            help="Accept emulator updates without prompting (ios, android, mobile only)",
+            help="Accept native emulator updates; mobile also deletes verified obsolete simulator files and data",
         )
         parser.add_argument(
             "--fresh",

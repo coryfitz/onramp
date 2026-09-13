@@ -88,7 +88,15 @@ tools working on __ONRAMP_APP_NAME__.
 - Metadata-only filesystem events must not reach clients as empty HMR cycles;
   real source edits must continue to trigger Fast Refresh.
 - Native runs check the vendor's newest compatible simulator packages and ask
-  before installing, upgrading, or creating global emulator components.
+  before installing, upgrading, or creating global emulator components. Native
+  `--force` preapproves version/build/revision updates, including a new AVD
+  required by an image upgrade; first installs, repairs, and display-only replacements
+  still require confirmation. `mobile --force` additionally authorizes permanent
+  cleanup of verified obsolete simulator files and eligible devices/app data;
+  direct `ios --force` and `android --force` still ask before cleanup. Preserve
+  active/current/newer environments, custom Android devices, referenced images,
+  and ambiguous state. It never bypasses compatibility checks
+  or rejected-download cooldowns and is separate from the app's `--rebuild` flag.
 
 ## Routes and verification
 

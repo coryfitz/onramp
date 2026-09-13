@@ -149,9 +149,12 @@ change.
   responds. Select a free port and pass it through to the React Native CLI.
 - `--port` belongs to the Python backend; `--metro-port` belongs to Metro.
 - `--watch-diagnostics` must report exact project-relative native source events.
-- `--force` on `ios`, `android`, and `mobile` preapproves emulator updates only;
-  never treat it as blanket consent for first installs, architecture repairs,
-  display-only replacements, or deleting devices, images, runtimes, and data.
+- `--force` on `ios`, `android`, and `mobile` preapproves emulator updates.
+  On `mobile` only, it also preapproves verified obsolete emulator cleanup,
+  including eligible old devices and their saved apps/data. Direct `ios` and
+  `android` still ask before cleanup. Never treat it as blanket consent for
+  first installs, architecture repairs, display-only replacements, or broad
+  deletion outside the validated obsolete-emulator inventory.
   Preserve compatibility checks, rejected-download cooldowns, and `--rebuild`
   as the separate app-rebuild flag.
 - Unchanged native inputs may reuse an app already installed on the same
@@ -194,11 +197,16 @@ change.
   app on that device when others are online.
 - Offer storage cleanup only after verifying a replacement runtime or AVD.
   Ask before removing shared iOS runtimes, Android system images, or virtual
-  devices and explain effects on saved app data and other projects. Keep
+  devices unless preapproved by `mobile --force`; explain effects on saved app
+  data and other projects. Keep
   current/newer runtimes and active devices, recheck immediately before each
-  removal, and skip cleanup if inventory is uncertain. Never delete iOS
-  device data as part of runtime cleanup or Android images still referenced
-  by an AVD. Only obsolete OnRamp command-line-tool copies may be pruned
+  removal, and skip cleanup if inventory is uncertain. Normal prompted iOS
+  runtime cleanup preserves device data; `mobile --force` may remove shutdown
+  devices for verified older runtimes and unavailable shutdown devices whose
+  strictly older runtime is absent. Never delete referenced Android images or
+  custom Android devices through automatic cleanup. Only known Android lock
+  formats with definitely dead owners may be treated as stale; preserve live
+  or uncertain locks. Obsolete OnRamp command-line-tool copies may be pruned
   automatically after validating their replacement; retain unrelated tools.
 - Native CLI launches perform bounded, once-daily disposable-storage maintenance.
   Automatically prune only marked OnRamp temporary work owned by a definitely
@@ -211,7 +219,8 @@ change.
   `--clean` explicitly applies disposable-output cleanup. Other deleted projects'
   Xcode output requires `--include-other-projects`; it never broadens cleanup to
   existing projects or device data. Shared-runtime/image/AVD cleanup stays a
-  separate, confirmed native-preflight action, including when the newest
+  separate native-preflight action, confirmed or preapproved by `mobile --force`,
+  including when the newest
   replacement is already installed. Keep housekeeping optional and nonfatal.
 - Treat Android's namespace, base application ID, and variant application ID
   as distinct values. Debug `applicationIdSuffix` values must be included when
