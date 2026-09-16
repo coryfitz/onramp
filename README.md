@@ -660,7 +660,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.48
+onramp upgrade --to 0.5.49
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -695,7 +695,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.48`. Project schema versions are tracked separately from package
+`onramp~=0.5.49`. Project schema versions are tracked separately from package
 versions; `onramp upgrade` applies any required schema migrations, including
 those introduced by patch releases.
 

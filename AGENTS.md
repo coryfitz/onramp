@@ -267,6 +267,11 @@ change.
 - Bind iOS simulators to Metro through numeric IPv4 loopback. Avoid
   `localhost`, whose dual-stack resolution can repeatedly disconnect Fast
   Refresh on iOS 26 simulator runtimes.
+- Generated iOS apps must use UIKit's scene lifecycle. Native synchronization
+  may migrate the known React Native 0.86 legacy `AppDelegate` while preserving
+  its initial properties, but must fail closed before modifying native files
+  when a customized legacy bootstrap cannot be recognized safely. The normal
+  native fingerprint must make that migration rebuild an older installed app.
 - Use Metro's native file watcher on macOS. Suppress only HMR cycles whose
   calculated delta has no added, modified, or deleted modules; metadata-only
   dependency events must not show a refresh banner, while real edits must pass.
