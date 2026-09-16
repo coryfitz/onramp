@@ -42,7 +42,7 @@ from .frontend import (
     start_frontend,
     storage_frontend,
 )
-from .project import atomic_write, package_version, write_project_manifest
+from .project import atomic_write, package_version, target_managed_files, write_project_manifest
 from .upgrade import upgrade_to_version
 from types import SimpleNamespace
 import re
@@ -912,6 +912,8 @@ def write_project_files(project_root: str, name: str, api_only: bool = False):
         os.path.join(project_root, "AGENTS.md"),
         replacements,
     )
+    for relative_path, content in target_managed_files(project_root, name).items():
+        atomic_write(Path(project_root) / relative_path, content)
     _write_project_template(
         "pyproject.toml",
         os.path.join(project_root, "pyproject.toml"),

@@ -13,7 +13,17 @@ import tomllib
 
 PROJECT_MANIFEST = Path(".onramp/project.toml")
 FRONTEND_MANIFEST = Path("build/.onramp/project.json")
-MANAGED_PROJECT_FILES = ("AGENTS.md",)
+PROJECT_GUIDANCE = Path("AGENTS.md")
+FRAMEWORK_GUIDANCE = Path(".onramp/framework-guidance.md")
+MANAGED_PROJECT_FILES = (FRAMEWORK_GUIDANCE.as_posix(),)
+FRAMEWORK_GUIDANCE_REFERENCE = (
+    "<!-- onramp:framework-guidance -->\n"
+    "Read [.onramp/framework-guidance.md](.onramp/framework-guidance.md) before working\n"
+    "on this project. It contains the current OnRamp framework defaults. Keep\n"
+    "project-specific instructions in this AGENTS.md; preserve those constraints\n"
+    "and flag contradictory instructions rather than silently replacing them.\n"
+    "<!-- /onramp:framework-guidance -->\n"
+)
 
 
 def framework_config() -> dict:
@@ -45,21 +55,42 @@ def _render_template(template_name: str, replacements: dict[str, str]) -> str:
     return content
 
 
-def target_managed_files(
+def _project_replacements(
     project_root: str | Path,
     project_name: str | None = None,
 ) -> dict[str, str]:
     root = Path(project_root).resolve()
     name = project_name or root.name
-    replacements = {
+    return {
         "__ONRAMP_APP_NAME__": name,
         "__ONRAMP_PROJECT_NAME__": name,
         "__ONRAMP_PROJECT_KIND__": (
             "full-stack" if (root / "build").is_dir() else "API-only"
         ),
     }
+
+
+def target_project_guidance(
+    project_root: str | Path, project_name: str | None = None,
+) -> str:
+    return _render_template("AGENTS.md", _project_replacements(project_root, project_name))
+
+
+def add_framework_guidance_reference(content: str) -> str:
+    """Add one reference without interpreting or rewriting legacy instructions."""
+    if FRAMEWORK_GUIDANCE_REFERENCE in content.replace("\r\n", "\n"):
+        return content
+    newline = "\r\n" if "\r\n" in content else "\n"
+    return FRAMEWORK_GUIDANCE_REFERENCE.replace("\n", newline) + newline + content
+
+
+def target_managed_files(
+    project_root: str | Path, project_name: str | None = None,
+) -> dict[str, str]:
     return {
-        "AGENTS.md": _render_template("AGENTS.md", replacements),
+        FRAMEWORK_GUIDANCE.as_posix(): _render_template(
+            "framework-guidance.md", _project_replacements(project_root, project_name),
+        ),
     }
 
 
@@ -133,7 +164,9 @@ def atomic_write(file_path: str | Path, content: str) -> None:
     temporary = destination.with_name(
         f".{destination.name}.onramp-tmp-{os.getpid()}"
     )
-    temporary.write_text(content, encoding="utf-8")
+    # Preserve legacy AGENTS.md line endings when adding its one-time reference.
+    with temporary.open("w", encoding="utf-8", newline="") as output:
+        output.write(content)
     os.replace(temporary, destination)
 
 

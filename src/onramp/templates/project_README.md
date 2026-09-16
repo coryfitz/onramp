@@ -7,9 +7,16 @@ An OnRamp __ONRAMP_PROJECT_KIND__ application.
 - `app/` contains the Python backend, models, settings, and migrations.
 - `build/` contains the shared React Native frontend when this is a full-stack app.
 - `build/ios/` and `build/android/` are added lazily by the native commands.
+- `AGENTS.md` contains project-owned instructions and a pointer to OnRamp's
+  managed defaults in `.onramp/framework-guidance.md`.
 
 Despite its name, `build/` is editable frontend source code in the current
 OnRamp phase. Do not delete or regenerate it after making application changes.
+
+Commit both instruction files. Put application context, constraints, and custom
+agent instructions in root `AGENTS.md`. Read the framework guidance before
+project work; its defaults do not remove project-specific constraints, and agents
+should flag contradictory instructions instead of silently replacing them.
 
 ## Setup
 
@@ -236,6 +243,18 @@ should be successful.
 Project version metadata is stored in `.onramp/project.toml`. OnRamp backs up
 files it changes under `.onramp/backups/` and stops rather than overwriting a
 modified framework-managed file.
+
+OnRamp manages `.onramp/framework-guidance.md`, including its hashes, backups,
+and conflict checks. Manual edits there are protected and can block an upgrade;
+keep custom instructions in root `AGENTS.md` instead. Upgrades of schema 5 or
+newer projects leave an existing root `AGENTS.md` unchanged.
+
+When an older project upgrades to schema 5, OnRamp preserves its existing root
+instructions and adds one prefixed instruction to read the new framework
+guidance. Legacy paragraphs are not automatically merged or deleted; review
+them manually after upgrading and retain project-specific constraints. Commit
+both instruction files and the updated `.onramp/project.toml`. The upgrade
+check previews these changes without modifying files.
 
 ## Native dependencies
 

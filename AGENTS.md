@@ -33,6 +33,24 @@ instead invokes the `onramp-js` npm version pinned in
 Run Python `onramp` commands from a generated project root. Run standalone
 `onramp-js` or npm commands from that project's `build/` directory.
 
+## Generated agent guidance invariants
+
+- Root `AGENTS.md` belongs to the generated project. Its small starter template
+  points agents to `.onramp/framework-guidance.md`; application instructions and
+  customizations belong in the root file. Commit both files.
+- `.onramp/framework-guidance.md` contains managed framework defaults. Retain
+  hash checks, backups, and conflict protection for manual edits to this file.
+  Framework defaults do not erase project-specific constraints; contradictory
+  instructions must be flagged instead of silently overwritten.
+- The schema 5 migration preserves all existing schema 0–4 root `AGENTS.md`
+  content and adds one prefixed instruction to read the framework guidance.
+  Never infer ownership of legacy paragraphs, merge or delete them automatically,
+  or reject the migration merely because legacy root instructions were edited.
+  Users may review retained legacy paragraphs manually after upgrading.
+- Upgrades from schema 5 onward leave an existing root `AGENTS.md` unchanged.
+  Do not add root `AGENTS.md` back to managed-file hashes or conflict checks.
+  Keep `onramp upgrade --check` read-only, including for instruction migration.
+
 ## Development checks
 
 For Python changes:

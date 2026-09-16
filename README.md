@@ -30,6 +30,19 @@ the backend scaffold for later use. From the generated project root, run
 `onramp backend` to change that setting to `BACKEND=True`, or run
 `onramp backend off` to change it back to `BACKEND=False`.
 
+Generated projects keep agent instructions in two committed files:
+
+- Root `AGENTS.md` belongs to the project. Add application-specific context,
+  constraints, and workflow instructions there.
+- `.onramp/framework-guidance.md` contains OnRamp's framework defaults and is
+  managed by `onramp upgrade`.
+
+The root file tells agents to read the framework guidance before project work.
+Framework defaults do not remove project-specific constraints; agents should
+flag contradictory instructions instead of silently replacing them. Commit
+both files, and keep customizations in root `AGENTS.md` so framework guidance
+can receive updates without conflicts.
+
 ## Create an app
 
 Start a new OnRamp app:
@@ -638,7 +651,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.43
+onramp upgrade --to 0.5.46
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -646,8 +659,26 @@ when necessary, runs each project-schema migration in order, updates Python
 and npm metadata structurally, and saves changed files under
 `.onramp/backups/`. Unchanged framework files update automatically. A managed
 file edited by the application developer is never overwritten; the upgrade
-stops and reports the conflict instead. Native projects remain lazy and are
-not rebuilt merely to upgrade project metadata. Platform route registries are
+stops and reports the conflict instead.
+
+Project schema 5 separates project-owned root `AGENTS.md` from managed
+`.onramp/framework-guidance.md`. When upgrading a schema 0–4 project, including
+a legacy project without `.onramp/project.toml`, OnRamp preserves the existing
+root instructions and adds one prefixed instruction to read the framework
+guidance. It does not infer which paragraphs are custom, merge them into the
+new guidance, or remove old framework paragraphs. Review any retained legacy
+paragraphs manually after the upgrade, keeping project-specific constraints.
+
+Later upgrades of schema 5 or newer projects leave an existing root `AGENTS.md`
+unchanged. The framework guidance receives normal hash-based conflict checks
+and backups: manual edits there remain protected and can block an upgrade.
+Put custom instructions in root `AGENTS.md`, and commit it together with
+`.onramp/framework-guidance.md` and the updated `.onramp/project.toml`.
+`onramp upgrade --check` previews this migration without changing either
+instruction file or the manifest.
+
+Native projects remain lazy and are not rebuilt merely to upgrade project
+metadata. Platform route registries are
 generated separately for iOS, Android, and web so simultaneous mobile runs do
 not overwrite shared route state. Route discovery and matching stay identical
 across targets: web retains route-level dynamic imports, while native route
@@ -655,8 +686,9 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.43`. Patch releases remain compatible with that project schema;
-minor releases may introduce a schema migration handled by `onramp upgrade`.
+`onramp~=0.5.46`. Project schema versions are tracked separately from package
+versions; `onramp upgrade` applies any required schema migrations, including
+those introduced by patch releases.
 
 
 The OnRamp App Framework Philosophy

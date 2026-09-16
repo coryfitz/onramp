@@ -5,6 +5,7 @@ import pytest
 from onramp import upgrade
 from onramp.frontend import FrontendUpgradeCheck
 from onramp.project import (
+    FRAMEWORK_GUIDANCE,
     PROJECT_MANIFEST,
     read_project_manifest,
     target_managed_files,
@@ -32,7 +33,9 @@ def create_legacy_project(tmp_path: Path, with_frontend: bool = False) -> Path:
 def make_project_current(root: Path) -> None:
     plan = upgrade.plan_project_upgrade(root, CURRENT_VERSION)
     for change in plan.changes:
-        (root / change.relative_path).write_text(change.content)
+        destination = root / change.relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(change.content)
     (root / PROJECT_MANIFEST).parent.mkdir(exist_ok=True)
     (root / PROJECT_MANIFEST).write_text(plan.manifest_content)
 
@@ -44,7 +47,7 @@ def project_snapshot(root: Path) -> dict[str, bytes]:
     }
 
 
-def test_plans_legacy_project_as_schema_one_without_overwriting_user_files(
+def test_plans_legacy_project_guidance_migration_without_losing_user_instructions(
     tmp_path,
 ):
     root = create_legacy_project(tmp_path)
@@ -52,10 +55,12 @@ def test_plans_legacy_project_as_schema_one_without_overwriting_user_files(
     plan = upgrade.plan_project_upgrade(root, CURRENT_VERSION)
 
     assert plan.from_schema == 0
-    assert plan.to_schema == 4
-    assert len(plan.migrations) == 4
+    assert plan.to_schema == 5
+    assert len(plan.migrations) == 5
     assert plan.conflicts == []
-    assert not any(change.relative_path == "AGENTS.md" for change in plan.changes)
+    agents = next(change for change in plan.changes if change.relative_path == "AGENTS.md")
+    assert agents.content.endswith("custom legacy instructions\n")
+    assert FRAMEWORK_GUIDANCE.as_posix() in agents.content
     pyproject_change = next(
         change for change in plan.changes if change.relative_path == "pyproject.toml"
     )
@@ -72,11 +77,11 @@ def test_applies_api_project_upgrade_with_manifest_and_backup(tmp_path):
     assert backup.is_dir()
     assert (backup / "pyproject.toml").is_file()
     assert (root / PROJECT_MANIFEST).is_file()
-    assert read_project_manifest(root)["schema_version"] == 4
+    assert read_project_manifest(root)["schema_version"] == 5
     assert CURRENT_REQUIREMENT in (root / "pyproject.toml").read_text()
 
 
-def test_modified_managed_file_conflicts_when_framework_base_changed(tmp_path):
+def test_obsolete_agents_hash_does_not_block_guidance_migration(tmp_path):
     root = create_legacy_project(tmp_path)
     (root / ".onramp").mkdir()
     (root / PROJECT_MANIFEST).write_text(
@@ -91,8 +96,9 @@ def test_modified_managed_file_conflicts_when_framework_base_changed(tmp_path):
 
     plan = upgrade.plan_project_upgrade(root, CURRENT_VERSION)
 
-    assert len(plan.conflicts) == 1
-    assert "AGENTS.md was modified" in plan.conflicts[0]
+    assert plan.conflicts == []
+    agents = next(change for change in plan.changes if change.relative_path == "AGENTS.md")
+    assert agents.content.endswith("custom legacy instructions\n")
 
 
 def test_upgrade_adds_all_generated_native_and_route_ignores(tmp_path):
@@ -181,7 +187,10 @@ def test_up_to_date_root_does_not_create_an_empty_backup(tmp_path, monkeypatch):
         'tortoise_orm = "app.db.db_config.TORTOISE_ORM"\n'
     )
     (root / ".gitignore").write_text(upgrade._updated_gitignore(".venv/\n"))
-    (root / "AGENTS.md").write_text(target_managed_files(root)["AGENTS.md"])
+    for relative_path, content in target_managed_files(root).items():
+        destination = root / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content)
     (root / "build" / ".onramp").mkdir()
     (root / "build" / ".onramp" / "project.json").write_text(
         '{"schemaVersion": 3}\n'
@@ -286,7 +295,10 @@ def test_check_combines_root_and_frontend_pending_changes(
 def test_manifest_only_upgrade_is_still_reported_as_pending(tmp_path, capsys):
     root = create_legacy_project(tmp_path)
     make_project_current(root)
-    (root / PROJECT_MANIFEST).unlink()
+    manifest = root / PROJECT_MANIFEST
+    manifest.write_text(manifest.read_text().replace(
+        f'onramp_version = "{CURRENT_VERSION}"', 'onramp_version = "0.5.3"'
+    ))
     before = project_snapshot(root)
     plan = upgrade.plan_project_upgrade(root, CURRENT_VERSION)
     assert not plan.changes and plan.manifest_changed
@@ -302,9 +314,10 @@ def test_conflicting_managed_file_check_does_not_change_the_project(tmp_path, ca
     make_project_current(root)
     manifest = root / PROJECT_MANIFEST
     manifest.write_text(manifest.read_text().replace(
-        upgrade.sha256(target_managed_files(root)["AGENTS.md"]), "old-framework-hash"
+        upgrade.sha256(target_managed_files(root)[FRAMEWORK_GUIDANCE.as_posix()]),
+        "old-framework-hash",
     ))
-    (root / "AGENTS.md").write_text("modified user instructions\n")
+    (root / FRAMEWORK_GUIDANCE).write_text("modified framework instructions\n")
     before = project_snapshot(root)
 
     assert not upgrade.upgrade_project(root, CURRENT_VERSION, check=True)

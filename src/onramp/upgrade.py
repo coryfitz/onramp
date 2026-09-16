@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -17,7 +18,9 @@ from urllib.request import urlopen
 
 from .frontend import check_frontend_upgrade, upgrade_frontend
 from .project import (
+    PROJECT_GUIDANCE,
     PROJECT_MANIFEST,
+    add_framework_guidance_reference,
     atomic_write,
     build_project_manifest,
     framework_config,
@@ -26,6 +29,7 @@ from .project import (
     read_project_manifest,
     sha256,
     target_managed_files,
+    target_project_guidance,
 )
 
 
@@ -48,6 +52,8 @@ class ProjectUpgradePlan:
     manifest_changed: bool = False
     has_frontend: bool = False
     migrations: list[dict] = field(default_factory=list)
+    # Recheck files whose ownership changes before making backups or writes.
+    input_snapshots: dict[str, bytes | None] = field(default_factory=dict)
 
 
 PROJECT_MIGRATIONS = {
@@ -55,6 +61,7 @@ PROJECT_MIGRATIONS = {
     1: "ignore generated native and platform-specific route output",
     2: "replace Aerich with portable Tortoise ORM migrations",
     3: "upgrade frontend deployment environments to the secure Node 22 toolchain",
+    4: "separate project-owned instructions from managed framework guidance",
 }
 
 NODE_VERSION = "22.15.0"
@@ -169,6 +176,49 @@ def _updated_netlify(content: str) -> str | None:
     )
 
 
+def _read_upgrade_input(root: Path, relative_path: str) -> bytes | None:
+    """Never adopt linked paths or overwrite an unrelated special file."""
+    parts = Path(relative_path).parts
+    destination = root
+    for index, part in enumerate(parts):
+        destination = destination / part
+        try:
+            info = destination.lstat()
+        except FileNotFoundError:
+            return None
+        if stat.S_ISLNK(info.st_mode):
+            raise OSError(f"{relative_path} uses a symbolic link; resolve it manually")
+        if index < len(parts) - 1:
+            if not stat.S_ISDIR(info.st_mode):
+                raise OSError(f"{relative_path} has a non-directory parent")
+        elif not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise OSError(f"{relative_path} is not an ordinary, unlinked file")
+    return destination.read_bytes()
+
+
+def _plan_project_guidance(plan: ProjectUpgradePlan) -> None:
+    """One-time additive migration; never merge or classify existing prose."""
+    if plan.from_schema >= 5:
+        return
+    relative_path = PROJECT_GUIDANCE.as_posix()
+    try:
+        original = _read_upgrade_input(plan.project_root, relative_path)
+        plan.input_snapshots[relative_path] = original
+        current = original.decode("utf-8") if original is not None else None
+    except (OSError, UnicodeError) as error:
+        plan.conflicts.append(f"Cannot preserve {relative_path}: {error}")
+        return
+    updated = (
+        target_project_guidance(plan.project_root)
+        if current is None else add_framework_guidance_reference(current)
+    )
+    if current != updated:
+        plan.changes.append(FileChange(
+            relative_path, updated,
+            "preserve project instructions and reference framework guidance",
+        ))
+
+
 def plan_project_upgrade(
     project_root: str | Path,
     target_version: str | None = None,
@@ -184,7 +234,14 @@ def plan_project_upgrade(
             f"OnRamp {package_version()} cannot apply migrations for {version}."
         )
 
-    manifest = read_project_manifest(root)
+    # Check the metadata path before reading it (including a linked .onramp/).
+    manifest_error = None
+    try:
+        manifest_bytes = _read_upgrade_input(root, PROJECT_MANIFEST.as_posix())
+        manifest = read_project_manifest(root) if manifest_bytes is not None else None
+    except OSError as error:
+        manifest_error = str(error)
+        manifest_bytes, manifest = None, None
     from_schema = int(manifest["schema_version"]) if manifest else 0
     to_schema = int(config["project_schema_version"])
     if from_schema > to_schema:
@@ -200,6 +257,11 @@ def plan_project_upgrade(
         has_frontend=(root / "build").is_dir(),
         migrations=project_migration_steps(from_schema, to_schema),
     )
+    if manifest_error:
+        plan.conflicts.append(manifest_error)
+        return plan
+    plan.input_snapshots[PROJECT_MANIFEST.as_posix()] = manifest_bytes
+    _plan_project_guidance(plan)
 
     pyproject_path = root / "pyproject.toml"
     if not pyproject_path.is_file():
@@ -256,23 +318,27 @@ def plan_project_upgrade(
 
     targets = target_managed_files(root)
     for relative_path, target_content in targets.items():
-        file_path = root / relative_path
-        if not file_path.is_file():
+        try:
+            original = _read_upgrade_input(root, relative_path)
+            plan.input_snapshots[relative_path] = original
+            current_content = original.decode("utf-8") if original is not None else None
+            if current_content is not None:
+                # Git autocrlf must not turn unchanged framework guidance into
+                # a customization. Keep raw snapshots and project prose intact.
+                current_content = current_content.replace("\r\n", "\n").replace("\r", "\n")
+        except (OSError, UnicodeError) as error:
+            plan.conflicts.append(f"Cannot update {relative_path}: {error}")
+            continue
+        if current_content is None:
             plan.changes.append(
                 FileChange(relative_path, target_content, "restore managed project file")
             )
             continue
 
-        current_content = file_path.read_text(encoding="utf-8")
         if current_content == target_content:
             continue
 
-        if not manifest:
-            # The schema-0 and schema-1 AGENTS templates are identical. Preserve
-            # any legacy customization and begin tracking the framework base.
-            continue
-
-        expected_hash = manifest.get("managed_files", {}).get(relative_path)
+        expected_hash = (manifest or {}).get("managed_files", {}).get(relative_path)
         target_hash = sha256(target_content)
         current_hash = sha256(current_content)
         if expected_hash == target_hash:
@@ -387,6 +453,11 @@ def apply_project_upgrade(
     if plan.conflicts:
         raise RuntimeError("Resolve the reported project conflicts before upgrading.")
 
+    for relative_path, original in plan.input_snapshots.items():
+        if _read_upgrade_input(plan.project_root, relative_path) != original:
+            raise RuntimeError(
+                f"{relative_path} changed after upgrade planning; rerun the upgrade check."
+            )
     backup_root, entries = _create_backup(plan)
     try:
         for change in plan.changes:

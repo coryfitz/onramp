@@ -11,7 +11,7 @@ import pytest
 from onramp import cli
 from onramp.db import manager as db_manager_module
 from onramp.db import migrations as migrations_module
-from onramp.project import package_version
+from onramp.project import FRAMEWORK_GUIDANCE, package_version, read_project_manifest
 
 
 @pytest.mark.parametrize("flag", ["--version", "-v"])
@@ -296,6 +296,7 @@ def test_project_files_have_real_metadata_and_ignore_native_outputs(tmp_path):
     pyproject = (tmp_path / "pyproject.toml").read_text()
     gitignore = (tmp_path / ".gitignore").read_text()
     agents = (tmp_path / "AGENTS.md").read_text()
+    framework_guidance = (tmp_path / FRAMEWORK_GUIDANCE).read_text()
 
     assert 'name = "my-great-app"' in pyproject
     assert f'"onramp~={package_version()}"' in pyproject
@@ -303,7 +304,10 @@ def test_project_files_have_real_metadata_and_ignore_native_outputs(tmp_path):
     assert "build/" not in {
         line.strip() for line in gitignore.splitlines()
     }
-    assert "build/ is the editable" in agents.replace(chr(96), "")
+    assert FRAMEWORK_GUIDANCE.as_posix() in agents
+    assert "My Great App" in agents
+    assert "build/ is the editable" in framework_guidance.replace(chr(96), "")
+    assert len(agents) < len(framework_guidance)
 
 
 def test_generated_settings_make_committed_migrations_authoritative(tmp_path, monkeypatch):
@@ -324,6 +328,7 @@ def test_generated_settings_make_committed_migrations_authoritative(tmp_path, mo
     pyproject = (target / "pyproject.toml").read_text()
     assert "[tool.tortoise]" in pyproject
     assert "[tool.aerich]" not in pyproject
+    assert (target / FRAMEWORK_GUIDANCE).is_file()
 
 
 def test_create_app_directory_accepts_empty_target_and_skips_netlify_for_api(
@@ -391,6 +396,30 @@ def test_create_new_project_publishes_only_after_both_layers_succeed(
     assert (tmp_path / "example" / "build" / "frontend-ready").is_file()
     assert (tmp_path / "example" / ".onramp" / "project.toml").is_file()
     assert not list(tmp_path.glob(".example-onramp-*"))
+
+
+@pytest.mark.parametrize("api_only", [True, False])
+def test_new_project_tracks_framework_guidance_and_leaves_root_project_owned(
+    tmp_path, monkeypatch, api_only,
+):
+    monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setattr(cli, "init_migrations", lambda _app_dir: True)
+    monkeypatch.setattr(cli, "ensure_node_env", lambda: {})
+
+    def fake_frontend(_name, output, **_kwargs):
+        Path(output).mkdir()
+        return True
+
+    monkeypatch.setattr(cli, "create_frontend", fake_frontend)
+
+    assert cli.create_new_project("example", api_only=api_only)
+
+    target = tmp_path / "example"
+    assert FRAMEWORK_GUIDANCE.as_posix() in (target / "AGENTS.md").read_text()
+    assert (target / FRAMEWORK_GUIDANCE).is_file()
+    manifest = read_project_manifest(target)
+    assert manifest["schema_version"] == 5
+    assert set(manifest["managed_files"]) == {FRAMEWORK_GUIDANCE.as_posix()}
 
 
 def test_create_new_project_preserves_initialized_git_repository(
