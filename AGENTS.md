@@ -235,6 +235,11 @@ change.
   access to the iOS preference or a current Device Hub connection cannot be
   proven to have adopted it, continue with exact per-device UI guidance and
   never report keyboard forwarding as enabled for that device.
+- Xcode Device Hub launches must keep the host and exact selected simulator's
+  general pasteboards synchronized through Apple's supported `devicectl`
+  session for as long as Metro is active. Bind cleanup to Metro shutdown,
+  tolerate a sync failure without abandoning the app launch, and never read,
+  persist, or log clipboard contents in OnRamp.
 - Offer storage cleanup only after verifying a replacement runtime or AVD.
   Ask before removing shared iOS runtimes, Android system images, or virtual
   devices unless preapproved by `mobile --force`; explain effects on saved app
