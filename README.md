@@ -486,7 +486,11 @@ read-only checks, but OnRamp will not pass that user-selected path through
 reports the exact required command without changing the system. The run
 then adds the iOS project if it is missing, checks CocoaPods, installs
 Pods, and checks Apple's preferred compatible Simulator runtime build on every
-launch. OnRamp asks before downloading a missing or newer runtime through
+launch. After reusing current Pods or completing `pod install`, OnRamp raises
+any explicit generated Pod deployment targets below React Native's supported
+iOS minimum. This includes resource-bundle targets and CocoaPods multi-project
+layouts, without changing the app-owned Podfile or lowering newer targets.
+OnRamp asks before downloading a missing or newer runtime through
 Xcode, requests the exact build for the host architecture, and retries Xcode's
 latest compatible runtime when necessary. A failed optional upgrade continues
 with an installed usable runtime. When Xcode rejects both download forms,
@@ -651,7 +655,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.46
+onramp upgrade --to 0.5.47
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -686,7 +690,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.46`. Project schema versions are tracked separately from package
+`onramp~=0.5.47`. Project schema versions are tracked separately from package
 versions; `onramp upgrade` applies any required schema migrations, including
 those introduced by patch releases.
 
