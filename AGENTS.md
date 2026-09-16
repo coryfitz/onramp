@@ -178,6 +178,12 @@ change.
   SQLite writes, bytecode, static files, or directory metadata.
 - `onramp mobile` completes every interactive native prerequisite check before
   starting either Metro server. Its Metro children must not read terminal input.
+- Xcode-license acceptance, Xcode first-launch setup, and Rosetta installation
+  must be detected before native generation, explicitly explained and confirmed,
+  and rechecked afterward. `--force` never accepts those software licenses.
+  Automated privileged Xcode setup uses only fixed Apple system commands and the
+  global `xcode-select` configuration; an explicit `DEVELOPER_DIR` is read-only
+  for OnRamp and must never be passed through an automatically spawned `sudo`.
 - After those preflights, `onramp mobile` launches Android before iOS and gives
   Android the requested Metro port so the faster emulator is available first.
 - Long native component installs must surface byte progress when the provider

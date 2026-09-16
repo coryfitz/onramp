@@ -38,6 +38,10 @@ Add `--force` to `onramp ios`, `onramp android`, or `onramp mobile` to accept
 compatible emulator updates automatically for that run. This downloads available
 updates (potentially several GB), rather than skipping the update check. Initial
 installs, repairs, and display-only replacements still ask for consent.
+Xcode-license acceptance, Xcode first-launch setup, and Rosetta installation
+also require separate explicit confirmation; `--force` never accepts software
+licenses. When approved, OnRamp performs those setup steps in the same native
+run and verifies them before continuing.
 `onramp mobile --force` also permanently deletes verified obsolete emulator files
 and eligible old simulator devices with their saved app data. Active/current/newer
 environments, custom Android devices, and uncertain files are preserved. The
@@ -208,7 +212,10 @@ Before launching, OnRamp checks the newest compatible iOS runtime or stable
 Android Emulator and system image. It asks before downloading, upgrading, or
 creating any global simulator components. iOS downloads select the host
 architecture explicitly, and a failed optional runtime upgrade continues with
-an installed usable runtime.
+an installed usable runtime. On macOS, the same preflight can offer Xcode's
+interactive license and first-launch setup. On Apple silicon, it can offer
+Rosetta when Google's installed Intel-only Android CLI requires it. Both flows
+remain opt-in and are rechecked before native generation continues.
 
 Native identity is declared in `build/app.json`. OnRamp synchronizes its
 display name, package and bundle identifiers, versions, build numbers, and

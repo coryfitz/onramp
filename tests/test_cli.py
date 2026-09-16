@@ -49,6 +49,7 @@ def test_help_discloses_mobile_force_deletes_obsolete_simulator_data(monkeypatch
     assert "For mobile only, it also deletes verified obsolete simulator" in output
     assert "eligible devices and their saved app data" in output
     assert "First-time installations and repairs still ask" in output
+    assert "Xcode and Rosetta setup always require separate" in output
 
 
 def test_find_next_available_port(monkeypatch):
@@ -523,6 +524,7 @@ def test_frontend_with_backend_requests_api_browser(
     monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
     monkeypatch.setattr(cli, "settings", SimpleNamespace(BACKEND=True))
     monkeypatch.setattr(cli, "ensure_node_env", lambda: {"PATH": "test"})
+    monkeypatch.setattr(cli, "is_port_in_use", lambda _port: False)
     monkeypatch.setattr(
         cli,
         "start_frontend",
@@ -533,11 +535,13 @@ def test_frontend_with_backend_requests_api_browser(
     monkeypatch.setattr(
         cli,
         "run_uvicorn_with_watch",
-        lambda port, companion_process=None, open_browser=False: (
+        lambda port, companion_process=None, open_browser=False,
+        port_preselected=False: (
             captured.update(
                 port=port,
                 companion=companion_process,
                 open_browser=open_browser,
+                port_preselected=port_preselected,
             )
             or True
         ),
@@ -550,6 +554,7 @@ def test_frontend_with_backend_requests_api_browser(
         "port": 9000,
         "companion": process,
         "open_browser": True,
+        "port_preselected": platform != "web",
     }
     cli.spawned_processes.clear()
 
@@ -564,6 +569,7 @@ def test_android_coordinates_backend_and_metro_port(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
     monkeypatch.setattr(cli, "settings", SimpleNamespace(BACKEND=True))
     monkeypatch.setattr(cli, "ensure_node_env", lambda: {"PATH": "test"})
+    monkeypatch.setattr(cli, "is_port_in_use", lambda _port: False)
 
     def fake_start(platform, output, **kwargs):
         captured.update(platform=platform, output=output, **kwargs)
@@ -573,11 +579,13 @@ def test_android_coordinates_backend_and_metro_port(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cli,
         "run_uvicorn_with_watch",
-        lambda port, companion_process=None, open_browser=False: (
+        lambda port, companion_process=None, open_browser=False,
+        port_preselected=False: (
             captured.update(
                 backend_port=port,
                 backend_companion=companion_process,
                 backend_opens_browser=open_browser,
+                backend_port_preselected=port_preselected,
             )
             or True
         ),
@@ -595,6 +603,7 @@ def test_android_coordinates_backend_and_metro_port(tmp_path, monkeypatch):
     assert captured["backend_port"] == 9000
     assert captured["backend_companion"] is process
     assert captured["backend_opens_browser"] is True
+    assert captured["backend_port_preselected"] is True
     cli.spawned_processes.clear()
 
 
@@ -608,6 +617,7 @@ def test_mobile_coordinates_both_apps_with_one_backend(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
     monkeypatch.setattr(cli, "settings", SimpleNamespace(BACKEND=True))
     monkeypatch.setattr(cli, "ensure_node_env", lambda: {"PATH": "test"})
+    monkeypatch.setattr(cli, "is_port_in_use", lambda _port: False)
 
     def fake_start(platform, output, **kwargs):
         captured.update(platform=platform, output=output, **kwargs)
@@ -617,11 +627,13 @@ def test_mobile_coordinates_both_apps_with_one_backend(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cli,
         "run_uvicorn_with_watch",
-        lambda port, companion_process=None, open_browser=False: (
+        lambda port, companion_process=None, open_browser=False,
+        port_preselected=False: (
             captured.update(
                 backend_port=port,
                 backend_companion=companion_process,
                 backend_opens_browser=open_browser,
+                backend_port_preselected=port_preselected,
             )
             or True
         ),
@@ -635,8 +647,62 @@ def test_mobile_coordinates_both_apps_with_one_backend(tmp_path, monkeypatch):
     assert captured["backend_port"] == 9000
     assert captured["backend_companion"] is process
     assert captured["backend_opens_browser"] is True
+    assert captured["backend_port_preselected"] is True
     assert cli.spawned_processes == [process]
     cli.spawned_processes.clear()
+
+
+def test_mobile_resolves_backend_port_before_starting_native_preflight(
+    tmp_path,
+    monkeypatch,
+):
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    process = SimpleNamespace(poll=lambda: None)
+    events = []
+
+    monkeypatch.setattr(cli, "BUILD_DIR", str(build_dir))
+    monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setattr(cli, "settings", SimpleNamespace(BACKEND=True))
+    monkeypatch.setattr(cli, "ensure_node_env", lambda: {"PATH": "test"})
+    monkeypatch.setattr(
+        cli,
+        "is_port_in_use",
+        lambda port: events.append(("check-port", port)) or port == 8000,
+    )
+    monkeypatch.setattr(
+        cli,
+        "find_next_available_port",
+        lambda port: events.append(("find-port", port)) or 8123,
+    )
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _prompt: events.append(("prompt-port", 8000)) or "y",
+    )
+    monkeypatch.setattr(
+        cli,
+        "start_frontend",
+        lambda *_args, **_kwargs: (
+            events.append(("start-frontend", None)) or process
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_uvicorn_with_watch",
+        lambda port, **kwargs: events.append(
+            ("start-backend", port, kwargs["port_preselected"])
+        ) or True,
+    )
+    monkeypatch.setattr(cli, "spawned_processes", [])
+
+    assert cli.run_mobile(port=8000)
+    assert events == [
+        ("check-port", 8000),
+        ("prompt-port", 8000),
+        ("find-port", 8001),
+        ("start-frontend", None),
+        ("start-backend", 8123, True),
+    ]
 
 
 @pytest.mark.parametrize("platform", ["ios", "android", "mobile"])
@@ -655,6 +721,7 @@ def test_native_runners_forward_emulator_update_consent_only_when_requested(
     monkeypatch.setattr(cli, "settings", SimpleNamespace(BACKEND=backend_enabled))
     monkeypatch.setenv("ONRAMP_ENVIRONMENT", "development")
     monkeypatch.setattr(cli, "ensure_node_env", lambda: {"PATH": "test"})
+    monkeypatch.setattr(cli, "is_port_in_use", lambda _port: False)
     monkeypatch.setattr(cli, "spawned_processes", [])
 
     def fake_start(selected, output, **kwargs):
@@ -690,7 +757,14 @@ def test_native_runners_forward_emulator_update_consent_only_when_requested(
     }
     assert cli.spawned_processes == ([process] if backend_enabled else [])
     assert backend_calls == (
-        [(8000, {"companion_process": process, "open_browser": True})]
+        [(
+            8000,
+            {
+                "companion_process": process,
+                "open_browser": True,
+                "port_preselected": True,
+            },
+        )]
         if backend_enabled else []
     )
 

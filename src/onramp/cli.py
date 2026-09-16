@@ -379,6 +379,22 @@ def find_next_available_port(starting_port=8000):
         port += 1
     return port
 
+
+def _resolve_backend_port(port: int) -> int | None:
+    """Resolve any interactive backend-port choice before native children start."""
+    if not is_port_in_use(port):
+        return port
+    print(f"Port {port} is already in use.")
+    response = input(
+        f"Use next available port (starting from {port + 1})? (y/n): "
+    ).strip().lower()
+    if response != "y":
+        print("User declined to use another port. Exiting.")
+        return None
+    selected = find_next_available_port(port + 1)
+    print(f"Using port {selected} instead.")
+    return selected
+
 # -----------------------------------------------------------------------------
 # Platform-specific runners
 # -----------------------------------------------------------------------------
@@ -448,6 +464,9 @@ def run_ios(
     project_name = os.path.basename(PROJECT_ROOT)
     backend_enabled = getattr(settings, "BACKEND", True)
     if backend_enabled:
+        selected_port = _resolve_backend_port(port)
+        if selected_port is None:
+            return False
         print("Starting iOS (in background) + backend dev server...")
         ios_process = start_frontend(
             "ios",
@@ -464,9 +483,10 @@ def run_ios(
             return False
         spawned_processes.append(ios_process)
         return run_uvicorn_with_watch(
-            port,
+            selected_port,
             companion_process=ios_process,
             open_browser=True,
+            port_preselected=True,
         )
     else:
         return run_frontend(
@@ -500,6 +520,9 @@ def run_android(
     project_name = os.path.basename(PROJECT_ROOT)
     backend_enabled = getattr(settings, "BACKEND", True)
     if backend_enabled:
+        selected_port = _resolve_backend_port(port)
+        if selected_port is None:
+            return False
         print("Starting Android (in background) + backend dev server...")
         android_process = start_frontend(
             "android",
@@ -516,9 +539,10 @@ def run_android(
             return False
         spawned_processes.append(android_process)
         return run_uvicorn_with_watch(
-            port,
+            selected_port,
             companion_process=android_process,
             open_browser=True,
+            port_preselected=True,
         )
 
     return run_frontend(
@@ -553,6 +577,9 @@ def run_mobile(
     project_name = os.path.basename(PROJECT_ROOT)
     backend_enabled = getattr(settings, "BACKEND", True)
     if backend_enabled:
+        selected_port = _resolve_backend_port(port)
+        if selected_port is None:
+            return False
         print("Starting iOS + Android (in background) + backend dev server...")
         mobile_process = start_frontend(
             "mobile",
@@ -569,9 +596,10 @@ def run_mobile(
             return False
         spawned_processes.append(mobile_process)
         return run_uvicorn_with_watch(
-            port,
+            selected_port,
             companion_process=mobile_process,
             open_browser=True,
+            port_preselected=True,
         )
 
     return run_frontend(
@@ -743,21 +771,18 @@ def run_uvicorn_with_watch(
     port=8000,
     companion_process=None,
     open_browser=False,
+    port_preselected=False,
 ):
     """Watch app/ for changes and restart uvicorn worker (no parent reloader)."""
     proc = None
     successful = True
 
     try:
-        if is_port_in_use(port):
-            print(f"Port {port} is already in use.")
-            resp = input(f"Use next available port (starting from {port + 1})? (y/n): ").strip().lower()
-            if resp == 'y':
-                port = find_next_available_port(port + 1)
-                print(f"Using port {port} instead.")
-            else:
-                print("User declined to use another port. Exiting.")
+        if not port_preselected:
+            selected_port = _resolve_backend_port(port)
+            if selected_port is None:
                 return False
+            port = selected_port
 
         frontend_result = _finished_frontend_result(companion_process)
         if frontend_result is not None:
@@ -1396,6 +1421,7 @@ For ios, android, and mobile, --force accepts available emulator updates
 without prompting. For mobile only, it also deletes verified obsolete simulator
 runtimes, eligible devices and their saved app data, and unreferenced old images.
 Active/current environments are kept. First-time installations and repairs still ask.
+Xcode and Rosetta setup always require separate software-license consent.
 Use --environment development, staging, or production to select one shared
 backend, web, and native runtime profile.
 repair:ios preserves Podfile.lock unless --fresh is set.

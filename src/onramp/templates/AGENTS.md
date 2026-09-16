@@ -91,7 +91,10 @@ tools working on __ONRAMP_APP_NAME__.
   before installing, upgrading, or creating global emulator components. Native
   `--force` preapproves version/build/revision updates, including a new AVD
   required by an image upgrade; first installs, repairs, and display-only replacements
-  still require confirmation. `mobile --force` additionally authorizes permanent
+  still require confirmation. Xcode-license acceptance, Xcode first-launch setup,
+  and Rosetta installation require separate explicit consent and verification;
+  `--force` never accepts software licenses. `mobile --force` additionally
+  authorizes permanent
   cleanup of verified obsolete simulator files and eligible devices/app data;
   direct `ios --force` and `android --force` still ask before cleanup. Preserve
   active/current/newer environments, custom Android devices, referenced images,

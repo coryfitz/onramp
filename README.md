@@ -407,7 +407,10 @@ the flag does not skip update checks or force an app rebuild. It covers iOS
 runtime version/build updates, Android Emulator updates, and newer Android
 system-image versions/revisions (creating a replacement AVD when required).
 First-time installs, architecture repairs, and display-only device replacements
-still require confirmation. `onramp mobile --force` also preapproves deletion of
+still require confirmation. Xcode-license acceptance, Xcode first-launch setup,
+and Rosetta installation always require their own explicit confirmation;
+`--force` never accepts software licenses. `onramp mobile --force` also
+preapproves deletion of
 verified obsolete emulator files, including eligible older simulator devices and
 their saved apps, data, and snapshots. This is permanent, not a move to Trash.
 The separate `ios --force` and `android --force` commands still ask before cleanup.
@@ -458,8 +461,17 @@ use Fast Refresh normally. If refresh behavior remains unexpected, run
 `onramp ios --watch-diagnostics`; OnRamp will print each relevant source event
 with its exact project-relative path.
 
-On macOS, `onramp ios` delegates the frontend launch to `onramp-js`. It
-adds the iOS project if it is missing, checks Xcode and CocoaPods, installs
+On macOS, `onramp ios` delegates the frontend launch to `onramp-js`. It checks
+Xcode licensing and first-launch readiness before native generation. If setup
+is incomplete, OnRamp first offers Apple's interactive privileged license
+review and then separately offers the privileged first-launch component setup.
+It rechecks both steps before continuing, uses the globally selected Xcode in
+normal `xcode-select` configurations, and never treats
+`--force` as license consent. An explicit `DEVELOPER_DIR` remains supported for
+read-only checks, but OnRamp will not pass that user-selected path through
+`sudo`; it reports the exact manual command instead. `onramp doctor ios`
+reports the exact required command without changing the system. The run
+then adds the iOS project if it is missing, checks CocoaPods, installs
 Pods, and checks Apple's preferred compatible Simulator runtime build on every
 launch. OnRamp asks before downloading a missing or newer runtime through
 Xcode, requests the exact build for the host architecture, and retries Xcode's
@@ -491,7 +503,15 @@ delete those OS-managed assets.
 Google's stable package list on every launch and asks before installing or
 upgrading the Android Emulator, its stable system image, or a reusable virtual
 device. It can bootstrap verified current Android command-line tools when the
-installed `sdkmanager` is missing or obsolete. When Google's installer prints
+installed `sdkmanager` is missing or obsolete. On Apple silicon, it validates
+Google's actual Android CLI executable. If an installed Intel-only CLI cannot
+run because Rosetta is absent, OnRamp explains the dependency and explicitly
+offers Apple's Rosetta installer, including its license acceptance and possible
+administrator-password prompt. It rechecks Rosetta and the exact Android tools
+after installation. Declining keeps a complete existing SDK usable while
+skipping package-update checks; missing components instead produce an actionable
+error. `--force` never installs Rosetta or accepts its license. When Google's
+installer prints
 only a download URL, OnRamp displays byte progress and then reports extraction
 while the official Android CLI retains responsibility for installation and
 verification. OnRamp gives that CLI an explicit native host platform,
