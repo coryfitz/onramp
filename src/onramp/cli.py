@@ -380,17 +380,18 @@ def find_next_available_port(starting_port=8000):
     return port
 
 
-def _resolve_backend_port(port: int) -> int | None:
-    """Resolve any interactive backend-port choice before native children start."""
+def _resolve_backend_port(port: int, *, force: bool = False) -> int | None:
+    """Resolve any backend-port choice before native children start."""
     if not is_port_in_use(port):
         return port
     print(f"Port {port} is already in use.")
-    response = input(
-        f"Use next available port (starting from {port + 1})? (y/n): "
-    ).strip().lower()
-    if response != "y":
-        print("User declined to use another port. Exiting.")
-        return None
+    if not force:
+        response = input(
+            f"Use next available port (starting from {port + 1})? (y/n): "
+        ).strip().lower()
+        if response != "y":
+            print("User declined to use another port. Exiting.")
+            return None
     selected = find_next_available_port(port + 1)
     print(f"Using port {selected} instead.")
     return selected
@@ -464,7 +465,10 @@ def run_ios(
     project_name = os.path.basename(PROJECT_ROOT)
     backend_enabled = getattr(settings, "BACKEND", True)
     if backend_enabled:
-        selected_port = _resolve_backend_port(port)
+        selected_port = _resolve_backend_port(
+            port,
+            force=force_emulator_updates,
+        )
         if selected_port is None:
             return False
         print("Starting iOS (in background) + backend dev server...")
@@ -473,6 +477,7 @@ def run_ios(
             BUILD_DIR,
             app_name=project_name,
             env=env,
+            backend_port=selected_port,
             metro_port=metro_port,
             watch_diagnostics=watch_diagnostics,
             rebuild=rebuild,
@@ -520,7 +525,10 @@ def run_android(
     project_name = os.path.basename(PROJECT_ROOT)
     backend_enabled = getattr(settings, "BACKEND", True)
     if backend_enabled:
-        selected_port = _resolve_backend_port(port)
+        selected_port = _resolve_backend_port(
+            port,
+            force=force_emulator_updates,
+        )
         if selected_port is None:
             return False
         print("Starting Android (in background) + backend dev server...")
@@ -529,6 +537,7 @@ def run_android(
             BUILD_DIR,
             app_name=project_name,
             env=env,
+            backend_port=selected_port,
             metro_port=metro_port,
             watch_diagnostics=watch_diagnostics,
             rebuild=rebuild,
@@ -577,7 +586,10 @@ def run_mobile(
     project_name = os.path.basename(PROJECT_ROOT)
     backend_enabled = getattr(settings, "BACKEND", True)
     if backend_enabled:
-        selected_port = _resolve_backend_port(port)
+        selected_port = _resolve_backend_port(
+            port,
+            force=force_emulator_updates,
+        )
         if selected_port is None:
             return False
         print("Starting iOS + Android (in background) + backend dev server...")
@@ -586,6 +598,7 @@ def run_mobile(
             BUILD_DIR,
             app_name=project_name,
             env=env,
+            backend_port=selected_port,
             metro_port=metro_port,
             watch_diagnostics=watch_diagnostics,
             rebuild=rebuild,
@@ -1419,9 +1432,11 @@ def main():
 The --port option controls the Python backend. --metro-port controls the
 React Native bundler. --watch-diagnostics prints source paths that trigger
 Fast Refresh. --rebuild forces native apps to rebuild and reinstall.
-For ios, android, and mobile, --force accepts available emulator updates
-without prompting. For mobile only, it also deletes verified obsolete simulator
-runtimes, eligible devices and their saved app data, and unreferenced old images.
+For ios, android, and mobile, --force selects the next available backend port
+when the requested port is occupied and accepts available emulator updates
+without prompting.
+For mobile only, it also deletes verified obsolete simulator runtimes. That
+includes eligible devices and their saved app data and unreferenced old images.
 Active/current environments are kept. First-time installations and repairs still ask.
 Xcode and Rosetta setup always require separate software-license consent.
 Use --environment development, staging, or production to select one shared
@@ -1471,7 +1486,7 @@ upgrade creates recoverable backups and never overwrites modified managed files.
         parser.add_argument(
             "--force",
             action="store_true",
-            help="Accept native emulator updates; mobile also deletes verified obsolete simulator files and data",
+            help="When needed, use the next available backend port and accept native emulator updates; mobile also deletes verified obsolete simulator files and data",
         )
         parser.add_argument(
             "--fresh",

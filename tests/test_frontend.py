@@ -154,7 +154,10 @@ def test_emulator_update_consent_through_python_bridge(
     monkeypatch.setattr(frontend.subprocess, "run", fake_spawn)
     monkeypatch.setattr(frontend.subprocess, "Popen", fake_spawn)
     runner = frontend.run_frontend if blocking else frontend.start_frontend
-    options = {"force_emulator_updates": True} if force_updates else {}
+    options = {
+        "backend_port": 8123,
+        **({"force_emulator_updates": True} if force_updates else {}),
+    }
 
     result = runner(platform, tmp_path, env={"PATH": "test"}, **options)
 
@@ -168,6 +171,7 @@ def test_emulator_update_consent_through_python_bridge(
     ]
     assert command == [
         *prefix, "run", platform, "--output", str(tmp_path),
+        "--backend-port", "8123",
         *(["--force"] if force_updates else []),
     ]
     assert "--rebuild" not in command
@@ -183,6 +187,17 @@ def test_frontend_bridge_rejects_emulator_updates_for_web(tmp_path, monkeypatch,
     monkeypatch.setattr(frontend.subprocess, "Popen", unexpected_spawn)
     with pytest.raises(ValueError, match="only supported for ios, android, and mobile"):
         runner("web", tmp_path, force_emulator_updates=True)
+
+
+@pytest.mark.parametrize("runner", [frontend.run_frontend, frontend.start_frontend])
+def test_frontend_bridge_rejects_backend_port_for_web(tmp_path, monkeypatch, runner):
+    def unexpected_spawn(*_args, **_kwargs):
+        pytest.fail("Invalid flags must not launch a subprocess")
+
+    monkeypatch.setattr(frontend.subprocess, "run", unexpected_spawn)
+    monkeypatch.setattr(frontend.subprocess, "Popen", unexpected_spawn)
+    with pytest.raises(ValueError, match="only supported for ios, android, and mobile"):
+        runner("web", tmp_path, backend_port=8123)
 
 
 def test_mobile_is_forwarded_through_the_python_bridge(tmp_path, monkeypatch):

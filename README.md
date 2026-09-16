@@ -414,8 +414,10 @@ TypeScript are still served fresh by Metro. Use `onramp ios --rebuild`,
 compilation and installation.
 
 Use `onramp ios --force`, `onramp android --force`, or `onramp mobile --force`
-to automatically accept compatible emulator updates for that run. OnRamp still
-checks for the latest version and downloads updates, which can be several GB;
+to use the next available backend port when the requested port is occupied and
+automatically accept compatible emulator updates for that run. Without
+`--force`, OnRamp still asks before switching backend ports. OnRamp still checks
+for the latest emulator version and downloads updates, which can be several GB;
 the flag does not skip update checks or force an app rebuild. It covers iOS
 runtime version/build updates, Android Emulator updates, and newer Android
 system-image versions/revisions (creating a replacement AVD when required).
@@ -429,6 +431,9 @@ their saved apps, data, and snapshots. This is permanent, not a move to Trash.
 The separate `ios --force` and `android --force` commands still ask before cleanup.
 Compatibility checks and the cooldown after a rejected iOS download remain in
 effect. Without `--force`, update prompts are unchanged.
+When OnRamp selects or receives a non-default backend port, it also updates the
+generated local native runtime URLs for that launch; remote profile URLs and
+the app-owned `build/app.json` remain unchanged.
 
 `onramp mobile` prepares both native apps and launches Android before iOS so the
 faster emulator is available first. Each platform gets its own project-owned
@@ -655,7 +660,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.47
+onramp upgrade --to 0.5.48
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -690,7 +695,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.47`. Project schema versions are tracked separately from package
+`onramp~=0.5.48`. Project schema versions are tracked separately from package
 versions; `onramp upgrade` applies any required schema migrations, including
 those introduced by patch releases.
 

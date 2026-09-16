@@ -90,6 +90,10 @@ tools working on __ONRAMP_APP_NAME__.
 - Add native npm dependencies in `build/` with `npm install --legacy-peer-deps`,
   then rerun `onramp ios` or `onramp android` for autolinking and rebuilding.
 - OnRamp selects a free Metro port instead of reusing an unidentified server.
+- Native `--force` runs select the next available Python backend port when the
+  requested port is occupied; without `--force`, changing ports still requires
+  confirmation. The selected backend port must flow into generated local native
+  runtime URLs without changing remote profile URLs or `build/app.json`.
 - Metadata-only filesystem events must not reach clients as empty HMR cycles;
   real source edits must continue to trigger Fast Refresh.
 - Native runs check the vendor's newest compatible simulator packages and ask

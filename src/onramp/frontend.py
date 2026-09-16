@@ -121,12 +121,15 @@ def run_frontend(
     rebuild: bool = False,
     environment: str | None = None,
     force_emulator_updates: bool = False,
+    backend_port: int | None = None,
 ) -> bool:
     """Prepare and run a frontend platform with onramp-js."""
     if platform not in {"web", "ios", "android", "mobile"}:
         raise ValueError(f"Unsupported frontend run platform: {platform}")
     if force_emulator_updates and platform == "web":
         raise ValueError("Emulator updates are only supported for ios, android, and mobile")
+    if backend_port is not None and platform == "web":
+        raise ValueError("Backend port forwarding is only supported for ios, android, and mobile")
 
     output_path = Path(output_dir).resolve()
     arguments = ["run", platform, "--output", str(output_path)]
@@ -134,6 +137,8 @@ def run_frontend(
         arguments.extend(["--environment", environment])
     if app_name:
         arguments.extend(["--name", app_name])
+    if backend_port is not None:
+        arguments.extend(["--backend-port", str(backend_port)])
     if metro_port is not None:
         arguments.extend(["--metro-port", str(metro_port)])
     if watch_diagnostics:
@@ -161,12 +166,15 @@ def start_frontend(
     rebuild: bool = False,
     environment: str | None = None,
     force_emulator_updates: bool = False,
+    backend_port: int | None = None,
 ) -> subprocess.Popen | None:
     """Start an onramp-js platform command without blocking Python."""
     if platform not in {"web", "ios", "android", "mobile"}:
         raise ValueError(f"Unsupported frontend run platform: {platform}")
     if force_emulator_updates and platform == "web":
         raise ValueError("Emulator updates are only supported for ios, android, and mobile")
+    if backend_port is not None and platform == "web":
+        raise ValueError("Backend port forwarding is only supported for ios, android, and mobile")
 
     output_path = Path(output_dir).resolve()
     arguments = ["run", platform, "--output", str(output_path)]
@@ -174,6 +182,8 @@ def start_frontend(
         arguments.extend(["--environment", environment])
     if app_name:
         arguments.extend(["--name", app_name])
+    if backend_port is not None:
+        arguments.extend(["--backend-port", str(backend_port)])
     if metro_port is not None:
         arguments.extend(["--metro-port", str(metro_port)])
     if watch_diagnostics:

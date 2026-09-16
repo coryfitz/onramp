@@ -168,6 +168,10 @@ change.
 - `--port` belongs to the Python backend; `--metro-port` belongs to Metro.
 - `--watch-diagnostics` must report exact project-relative native source events.
 - `--force` on `ios`, `android`, and `mobile` preapproves emulator updates.
+  It also preapproves selecting the next available Python backend port when the
+  requested port is occupied; without `--force`, changing ports still asks.
+  The selected backend port must flow into generated local native runtime URLs
+  without changing remote profile URLs or the app-owned `build/app.json`.
   On `mobile` only, it also preapproves verified obsolete emulator cleanup,
   including eligible old devices and their saved apps/data. Direct `ios` and
   `android` still ask before cleanup. Never treat it as blanket consent for

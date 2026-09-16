@@ -41,10 +41,14 @@ Use `--environment development`, `--environment staging`, or
 Frontend profile URLs, display-name suffixes, and identifier suffixes live in
 `build/app.json`.
 
-Add `--force` to `onramp ios`, `onramp android`, or `onramp mobile` to accept
-compatible emulator updates automatically for that run. This downloads available
-updates (potentially several GB), rather than skipping the update check. Initial
-installs, repairs, and display-only replacements still ask for consent.
+Add `--force` to `onramp ios`, `onramp android`, or `onramp mobile` to use the
+next available backend port when the requested port is occupied and accept
+compatible emulator updates automatically for that run. Without `--force`,
+OnRamp still asks before switching backend ports. Emulator updates may download
+several GB rather than skipping the update check. Initial installs, repairs, and
+display-only replacements still ask for consent.
+The local native runtime URLs follow the selected backend port for that launch;
+remote profile URLs and `build/app.json` remain unchanged.
 Xcode-license acceptance, Xcode first-launch setup, and Rosetta installation
 also require separate explicit confirmation; `--force` never accepts software
 licenses. When approved, OnRamp performs those setup steps in the same native

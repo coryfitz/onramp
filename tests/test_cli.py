@@ -38,7 +38,7 @@ def test_is_port_in_use():
     assert not cli.is_port_in_use(port)
 
 
-def test_help_discloses_mobile_force_deletes_obsolete_simulator_data(monkeypatch, capsys):
+def test_help_discloses_native_force_behavior(monkeypatch, capsys):
     monkeypatch.setattr(cli.sys, "argv", ["onramp", "--help"])
 
     with pytest.raises(SystemExit) as exit_info:
@@ -46,6 +46,7 @@ def test_help_discloses_mobile_force_deletes_obsolete_simulator_data(monkeypatch
 
     assert exit_info.value.code == 0
     output = capsys.readouterr().out
+    assert "--force selects the next available backend port" in output
     assert "For mobile only, it also deletes verified obsolete simulator" in output
     assert "eligible devices and their saved app data" in output
     assert "First-time installations and repairs still ask" in output
@@ -56,6 +57,21 @@ def test_find_next_available_port(monkeypatch):
     monkeypatch.setattr(cli, "is_port_in_use", lambda port: port in {8000, 8001})
 
     assert cli.find_next_available_port(8000) == 8002
+
+
+def test_resolve_backend_port_preserves_decline_without_force(monkeypatch, capsys):
+    find_calls = []
+    monkeypatch.setattr(cli, "is_port_in_use", lambda _port: True)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+    monkeypatch.setattr(
+        cli,
+        "find_next_available_port",
+        lambda port: find_calls.append(port) or 8123,
+    )
+
+    assert cli._resolve_backend_port(8000) is None
+    assert find_calls == []
+    assert "User declined to use another port" in capsys.readouterr().out
 
 
 def test_runtime_environment_selection_is_shared_and_validated(monkeypatch):
@@ -711,8 +727,8 @@ def test_mobile_resolves_backend_port_before_starting_native_preflight(
     monkeypatch.setattr(
         cli,
         "start_frontend",
-        lambda *_args, **_kwargs: (
-            events.append(("start-frontend", None)) or process
+        lambda *_args, **kwargs: (
+            events.append(("start-frontend", kwargs["backend_port"])) or process
         ),
     )
     monkeypatch.setattr(
@@ -729,8 +745,71 @@ def test_mobile_resolves_backend_port_before_starting_native_preflight(
         ("check-port", 8000),
         ("prompt-port", 8000),
         ("find-port", 8001),
-        ("start-frontend", None),
+        ("start-frontend", 8123),
         ("start-backend", 8123, True),
+    ]
+
+
+@pytest.mark.parametrize("platform", ["ios", "android", "mobile"])
+def test_native_force_selects_next_backend_port_without_prompt(
+    tmp_path,
+    monkeypatch,
+    platform,
+):
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    process = SimpleNamespace(poll=lambda: None)
+    events = []
+
+    monkeypatch.setattr(cli, "BUILD_DIR", str(build_dir))
+    monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setattr(cli, "settings", SimpleNamespace(BACKEND=True))
+    monkeypatch.setattr(cli, "ensure_node_env", lambda: {"PATH": "test"})
+    monkeypatch.setattr(
+        cli,
+        "is_port_in_use",
+        lambda port: events.append(("check-port", port)) or port == 9000,
+    )
+    monkeypatch.setattr(
+        cli,
+        "find_next_available_port",
+        lambda port: events.append(("find-port", port)) or 9123,
+    )
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _prompt: pytest.fail("--force must not prompt for a fallback port"),
+    )
+
+    def fake_start(selected, _output, **kwargs):
+        events.append(
+            (
+                "start-frontend",
+                selected,
+                kwargs["backend_port"],
+                kwargs["force_emulator_updates"],
+            )
+        )
+        return process
+
+    monkeypatch.setattr(cli, "start_frontend", fake_start)
+    monkeypatch.setattr(
+        cli,
+        "run_uvicorn_with_watch",
+        lambda port, **kwargs: events.append(
+            ("start-backend", port, kwargs["port_preselected"])
+        ) or True,
+    )
+    monkeypatch.setattr(cli, "spawned_processes", [])
+
+    assert getattr(cli, f"run_{platform}")(
+        port=9000,
+        force_emulator_updates=True,
+    )
+    assert events == [
+        ("check-port", 9000),
+        ("find-port", 9001),
+        ("start-frontend", platform, 9123, True),
+        ("start-backend", 9123, True),
     ]
 
 
@@ -778,6 +857,7 @@ def test_native_runners_forward_emulator_update_consent_only_when_requested(
     assert arguments == {
         "app_name": tmp_path.name,
         "env": {"PATH": "test", "ONRAMP_ENVIRONMENT": "development"},
+        **({"backend_port": 8000} if backend_enabled else {}),
         "metro_port": None,
         "watch_diagnostics": False,
         "rebuild": False,
