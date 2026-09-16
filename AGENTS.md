@@ -223,6 +223,18 @@ change.
   old AVD and installed system image unless separately approved for cleanup,
   prefer the sharper matching device, and explicitly install and launch the
   app on that device when others are online.
+- Native simulator launches must make the host keyboard type into a focused
+  application text field without requiring clicks on the software keyboard.
+  Enable and verify hardware-keyboard simulation for both legacy iOS Simulator
+  and Xcode Device Hub before booting or opening the selected device. Ensure
+  `hw.keyboard=yes` for Android AVDs in OnRamp's reserved canonical namespace
+  before boot; when a running matching AVD needs that one-time repair, stop
+  only that exact verified AVD and cold-start it without wiping its apps or
+  data. Never rewrite AVDs outside the reserved namespace or ambiguous,
+  malformed, symlinked, or noncanonical AVD metadata. If macOS denies narrow
+  access to the iOS preference or a current Device Hub connection cannot be
+  proven to have adopted it, continue with exact per-device UI guidance and
+  never report keyboard forwarding as enabled for that device.
 - Offer storage cleanup only after verifying a replacement runtime or AVD.
   Ask before removing shared iOS runtimes, Android system images, or virtual
   devices unless preapproved by `mobile --force`; explain effects on saved app

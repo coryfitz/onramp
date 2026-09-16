@@ -504,6 +504,14 @@ continuing to check changed Xcode or runtime metadata immediately. If Xcode
 itself is absent, OnRamp can open
 its Mac App Store page after permission, but Apple requires the user to
 complete the Xcode installation.
+Before booting or showing the selected iOS device, OnRamp configures and
+verifies the host-keyboard preference for either legacy Simulator or Xcode
+Device Hub. If a Device Hub default changes while the selected simulator is
+active, OnRamp restarts only that simulator without wiping its apps or data so
+the next connection can adopt the setting. If an existing connection cannot be
+proven to have adopted it, or macOS denies the narrow preference update,
+launch continues without claiming keyboard forwarding is active and prints the
+exact per-device menu to use.
 
 After a replacement iOS runtime is verified, OnRamp offers to remove older
 idle runtimes, listing versions and approximate sizes. This requires separate
@@ -557,10 +565,15 @@ explicitly targets the selected emulator even if another device remains online. 
 checksum mismatches are failures even when the provider exits with status
 zero. Emulator processes that exit during startup report their own diagnostics
 immediately instead of appearing to hang until the boot timeout. OnRamp selects
-JDK 17, enables macOS clipboard sharing, cold-starts the selected AVD without
-the boot animation, targets only its active CPU architecture during native
-builds, and wakes it automatically. These settings apply only to the frontend
-process, so no shell profile editing is required.
+JDK 17, enables macOS clipboard sharing, and enables host-keyboard input on
+AVDs in the reserved `OnRamp_API_*` namespace whose metadata matches OnRamp's
+canonical structure. An older matching device may cold-start once when that
+keyboard setting is repaired; installed apps and device data are preserved.
+AVDs outside the reserved namespace and ambiguous configurations are left
+unchanged with manual keyboard guidance. OnRamp cold-starts the selected AVD
+without the boot animation, targets only its active CPU architecture during
+native builds, and wakes it automatically. These settings apply only to the
+frontend process, so no shell profile editing is required.
 
 Native Home navigation resets the route stack to the generated root. Home
 controls on ordinary and not-found screens use the shared navigation layer and
@@ -660,7 +673,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.49
+onramp upgrade --to 0.5.50
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -695,7 +708,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.49`. Project schema versions are tracked separately from package
+`onramp~=0.5.50`. Project schema versions are tracked separately from package
 versions; `onramp upgrade` applies any required schema migrations, including
 those introduced by patch releases.
 
