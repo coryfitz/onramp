@@ -259,3 +259,33 @@ def test_development_remains_local_without_resend_configuration(
     monkeypatch.setattr(email_module, "_write_development_message", outbox)
     assert send().provider == "development"
     assert len(messages) == 1
+
+
+def test_development_outbox_succeeds_when_terminal_output_is_unavailable(
+    tmp_path, monkeypatch
+):
+    def unavailable_terminal(*_args, **_kwargs):
+        raise OSError("terminal is unavailable")
+
+    monkeypatch.setattr("builtins.print", unavailable_terminal)
+    result = email_module._write_development_message(
+        {
+            "to": "recipient@example.com",
+            "subject": "Verification test",
+            "text": "Verification code: 123456",
+            "html": "<p>Verification code: 123456</p>",
+            "idempotency_key": "verification/terminal-test",
+            "purpose": "notification_subscription",
+            "code": "123456",
+        },
+        str(tmp_path / "app"),
+    )
+
+    assert result == EmailSendResult(
+        provider="development",
+        message_id="dev/verification/terminal-test",
+    )
+    stored = json.loads(
+        (tmp_path / ".onramp" / "dev-mail-outbox.jsonl").read_text()
+    )
+    assert stored["idempotency_key"] == "verification/terminal-test"

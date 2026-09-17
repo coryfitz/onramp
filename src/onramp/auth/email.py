@@ -65,10 +65,15 @@ def _write_development_message(message: dict, app_dir: str | None) -> EmailSendR
         if message.get("code") and message.get("purpose")
         else message["subject"]
     )
-    print(
-        f"OnRamp development mail: {message['to']} -> {description}; "
-        f"outbox: {destination}"
-    )
+    try:
+        print(
+            f"OnRamp development mail: {message['to']} -> {description}; "
+            f"outbox: {destination}"
+        )
+    except Exception:
+        # The outbox is the durable development delivery. A detached or closed
+        # terminal must not turn that successful write into an API failure.
+        pass
     return EmailSendResult(
         provider="development",
         message_id=f"dev/{message['idempotency_key']}",
