@@ -193,7 +193,7 @@ def test_up_to_date_root_does_not_create_an_empty_backup(tmp_path, monkeypatch):
         destination.write_text(content)
     (root / "build" / ".onramp").mkdir()
     (root / "build" / ".onramp" / "project.json").write_text(
-        '{"schemaVersion": 3}\n'
+        '{"schemaVersion": 4}\n'
     )
     write_project_manifest(root)
     calls = []

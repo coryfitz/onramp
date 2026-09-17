@@ -390,7 +390,7 @@ wheels = [
 
 [[package]]
 name = "onramp"
-version = "0.5.51"
+version = "0.5.52"
 source = { editable = "." }
 dependencies = [
     { name = "asyncmy" },

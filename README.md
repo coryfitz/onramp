@@ -433,7 +433,9 @@ Compatibility checks and the cooldown after a rejected iOS download remain in
 effect. Without `--force`, update prompts are unchanged.
 When OnRamp selects or receives a non-default backend port, it also updates the
 generated local native runtime URLs for that launch; remote profile URLs and
-the app-owned `build/app.json` remain unchanged.
+the app-owned `build/app.json` remain unchanged. Framework-owned entrypoints
+bootstrap that generated profile before application components render, so
+customized app roots still receive the selected backend port.
 
 `onramp mobile` prepares both native apps and launches Android before iOS so the
 faster emulator is available first. Each platform gets its own project-owned
@@ -673,7 +675,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 onramp upgrade
-onramp upgrade --to 0.5.51
+onramp upgrade --to 0.5.52
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -708,7 +710,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.51`. Project schema versions are tracked separately from package
+`onramp~=0.5.52`. Project schema versions are tracked separately from package
 versions; `onramp upgrade` applies any required schema migrations, including
 those introduced by patch releases.
 
