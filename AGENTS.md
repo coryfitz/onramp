@@ -14,6 +14,22 @@ Always inspect and commit the two Git worktrees separately. A clean parent
 - Keep both packages on the `0.5.x` release line. Do not publish `0.6.0` or
   later unless the user explicitly authorizes that version change.
 
+## CLI environment isolation
+
+- Treat OnRamp as a CLI tool as well as a project dependency. Install the
+  user-level `onramp` executable with `uv tool install onramp` so its dependencies
+  cannot conflict with Poetry, another CLI, or packages in a pyenv/base Python.
+- Never install or upgrade OnRamp with bare `pip` in a shared base interpreter.
+  For a published exact version, use `uv tool install --force onramp==VERSION`;
+  for an existing isolated installation, use `uv tool upgrade onramp`.
+- Inside an OnRamp application, prefer `uv run onramp ...` so commands use the
+  version pinned by that project's `pyproject.toml` and `uv.lock`. Use the
+  repository's own `uv run onramp ...` when testing unpublished framework code.
+- Preserve the upgrader's temporary-environment handoff: an older CLI may
+  download the target release to migrate a project, but it must not rewrite an
+  ambiguous global/base Python installation. Any follow-up message must explain
+  this distinction and give an exact isolated-tool command.
+
 ## Local versus published behavior
 
 When this Python source checkout contains `onramp-js/bin/onramp-js.js`, the
@@ -59,6 +75,9 @@ For Python changes:
 uv sync --extra dev
 uv run --extra dev pytest
 ```
+
+Run the source CLI as `uv run onramp ...`; do not install the checkout into a
+global or shared Python environment for development testing.
 
 For frontend-generator changes:
 

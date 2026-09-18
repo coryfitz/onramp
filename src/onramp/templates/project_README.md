@@ -21,20 +21,24 @@ should flag contradictory instructions instead of silently replacing them.
 ## Setup
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -e .
+uv sync
 ```
 
-Run commands from this project root:
+Run commands from this project root through the project environment:
 
 ```bash
-onramp run
-onramp ios
-onramp android
-onramp mobile
-onramp doctor ios
-onramp test
+uv run onramp run
+uv run onramp ios
+uv run onramp android
+uv run onramp mobile
+uv run onramp doctor ios
+uv run onramp test
 ```
+
+This guarantees that commands use the OnRamp version pinned in
+`pyproject.toml` and `uv.lock`. If you also want a user-level command for
+creating projects, install it in isolation with `uv tool install onramp`; never
+install OnRamp into a shared pyenv or system/base Python with bare `pip`.
 
 Use `--environment development`, `--environment staging`, or
 `--environment production` to select one backend, web, and native profile.
@@ -266,12 +270,17 @@ display name, package and bundle identifiers, versions, build numbers, and
 Check or preview an upgrade before applying it:
 
 ```bash
-onramp upgrade --check
-onramp upgrade
+uv run onramp upgrade --check
+uv run onramp upgrade
 ```
 
 The check is non-mutating and ends by reporting whether the proposed upgrade
 should be successful.
+
+An older CLI can download the target OnRamp release into a temporary
+environment to migrate this project. That does not update a separate global
+executable. Continue using `uv run onramp` for the project-pinned version, or
+update an isolated user-level installation with `uv tool upgrade onramp`.
 
 Project version metadata is stored in `.onramp/project.toml`. OnRamp backs up
 files it changes under `.onramp/backups/` and stops rather than overwriting a

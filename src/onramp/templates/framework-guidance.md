@@ -33,6 +33,9 @@ tools working on __ONRAMP_APP_NAME__.
 
 ## Commands
 
+- Prefer `uv run onramp ...` inside the project so every command uses the
+  version pinned by `pyproject.toml` and `uv.lock`. A user-level CLI belongs in
+  an isolated `uv tool` environment, never a shared pyenv or system/base Python.
 - Create projects from their parent directory. The destination may be missing,
   empty, or contain only an initialized `.git` entry.
 - `onramp run` starts web development and starts Python only when `BACKEND=True`.

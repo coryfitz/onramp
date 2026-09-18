@@ -6,8 +6,13 @@ run on the web, iOS, and Android with a shared React Native frontend.
 ## Installation
 
 ```bash
-pip install onramp
+uv tool install onramp
 ```
+
+This keeps OnRamp and its CLI dependencies isolated from Poetry and other
+Python tools. Do not install OnRamp with bare `pip` into a pyenv or system/base
+Python. Upgrade the isolated command with `uv tool upgrade onramp`; install an
+exact release with `uv tool install --force onramp==VERSION`.
 
 Show the installed OnRamp version:
 
@@ -15,6 +20,11 @@ Show the installed OnRamp version:
 onramp --version
 onramp -v
 ```
+
+Inside an existing OnRamp project, prefer `uv run onramp ...` to use the
+framework version pinned by that project's `pyproject.toml` and `uv.lock`.
+Contributors working from this source checkout should likewise use `uv run
+onramp ...` rather than globally installing the checkout.
 
 ## Project architecture
 
@@ -709,7 +719,7 @@ Native version, and framework-managed file bases in `.onramp/project.toml`.
 Inspect an upgrade before changing anything:
 
 ```bash
-onramp upgrade --check
+uv run onramp upgrade --check
 ```
 
 The check prints the complete non-mutating upgrade plan and ends with a clear
@@ -720,8 +730,8 @@ whether the upgrade should be successful or which conflicts block it.
 Apply the latest release, or select one explicitly:
 
 ```bash
-onramp upgrade
-onramp upgrade --to 0.5.52
+uv run onramp upgrade
+uv run onramp upgrade --to 0.5.52
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -730,6 +740,11 @@ and npm metadata structurally, and saves changed files under
 `.onramp/backups/`. Unchanged framework files update automatically. A managed
 file edited by the application developer is never overwritten; the upgrade
 stops and reports the conflict instead.
+
+That temporary release upgrades the project; it does not imply that a separate
+global executable was replaced. `uv run onramp` follows the project's updated
+pin. If you also keep the isolated user-level command, update it separately
+with `uv tool upgrade onramp`.
 
 Project schema 5 separates project-owned root `AGENTS.md` from managed
 `.onramp/framework-guidance.md`. When upgrading a schema 0–4 project, including
