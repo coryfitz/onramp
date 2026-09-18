@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "onramp"
-version = "0.5.53"
+version = "0.5.54"
 description = "A full-stack Python framework for building web, iOS, and Android apps with React Native"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,6 +30,7 @@ classifiers = [
 dependencies = [
     "asyncpg>=0.30.0,<1",
     "asyncmy>=0.2.10,<1",
+    "keyring>=25.6.0,<26",
     "starlette>=0.47.3,<2",
     "tortoise-orm>=1.1.8,<2",
     "uvicorn>=0.35.0",

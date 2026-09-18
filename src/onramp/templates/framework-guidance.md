@@ -23,6 +23,11 @@ tools working on __ONRAMP_APP_NAME__.
   `ONRAMP_ENVIRONMENT` is exactly `development`; deployments use migrations.
 - `DATABASE_URL` overrides the safe local database defaults. Never commit
   database passwords, email credentials, signing keys, or provider secrets.
+- `onramp secret NAME` keeps local backend values in the OS credential store,
+  scoped by project and shared across environments by default. An explicit
+  environment creates only an override. Never pass values as command arguments,
+  expose them to frontend tooling, or print them. Resolution precedence is
+  process/provider value, environment override, then shared local value.
 - Production refuses SQLite unless `ONRAMP_ALLOW_PRODUCTION_SQLITE=true`
   explicitly confirms intentional persistent storage.
 
@@ -56,6 +61,9 @@ tools working on __ONRAMP_APP_NAME__.
   select, validate, build, and deploy configured backend and web targets. When
   both are selected, validate and build both before deploying the backend and
   then the frontend. `onramp start` is the stable production ASGI entry point.
+- `onramp secret push NAME --environment staging|production` is an explicit
+  provider handoff for a configured Render backend. It changes only the named
+  backend environment value; deployment and restart remain separate actions.
 - Framework notification dispatches preview unless `--send` is explicit. Treat
   each event key as application-global, filter by runtime environment, preserve
   delivery idempotency and suppression, and never bypass the application

@@ -109,6 +109,14 @@ change.
   before the web frontend.
 - Deployment topology belongs in `onramp.toml`, runtime application behavior in
   `app/settings.py`, and secrets in the provider environment.
+- Local backend secrets managed by `onramp secret` belong in the operating
+  system credential store, scoped by project and shared across environments by
+  default. Environment-specific values are overrides. Never accept secret values
+  as CLI arguments, print them, or inject them into frontend processes. Resolve
+  explicit process/provider values first, environment overrides second, and the
+  shared local value last.
+- Provider secret handoff must be explicit and update one named backend value;
+  it must not silently deploy, restart, or replace unrelated provider values.
 - AUTH-enabled deployment scaffolds must provision distinct auth/identity
   secrets, a secure public action URL, and a configured email sender. Hosted
   backend checks reject wildcard CORS origins.

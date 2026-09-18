@@ -107,6 +107,29 @@ In staging/production, verify your sending domain in Resend and set
 backend's secret environment. `AUTH.email_sender`, if configured, overrides
 the outbox even in development; checks never import or invoke it.
 
+Store a local backend secret through a hidden prompt instead of putting its
+value in shell history:
+
+```bash
+onramp secret RESEND_API_KEY
+onramp secret list
+onramp secret check RESEND_API_KEY
+# Only when staging needs a different value:
+onramp secret RESEND_API_KEY --environment staging
+```
+
+Values are kept in the operating system credential store and scoped to this
+project. A value stored without `--environment` is shared by development,
+staging, and production. Add the flag only to create an environment-specific
+override. Explicit process environment values take precedence, followed by an
+environment override and then the shared value.
+OnRamp injects local values only into the Python development server and backend
+commands, never the web or native frontend toolchain. Delete a value with
+`onramp secret delete RESEND_API_KEY`; adding `--environment staging` deletes
+only that override. Do not append a
+secret value to the command: positional values are refused because shell
+history and process listings can expose them.
+
 The same development outbox handles application notifications. Set
 `ONRAMP_PUBLIC_URL` in hosted environments for signed unsubscribe links. Use
 `onramp notifications report` to inspect aggregate counts,
@@ -200,8 +223,14 @@ The first Render deployment requires a one-time connection of the generated
 Environment-specific automation may instead use variables such as
 `ONRAMP_RENDER_STAGING_BACKEND_SERVICE`.
 Deployment topology belongs in `onramp.toml`; backend runtime behavior remains
-in `app/settings.py`, and secret values stay in the provider environment or an
-ignored local `.env` loaded by your shell or container tool.
+in `app/settings.py`, and secret values stay in the provider environment or the
+project-scoped OS credential store. For a configured Render backend, run
+`onramp secret push RESEND_API_KEY`; it uses the deployment environment from
+`onramp.toml`. A production override is needed only if the shared key differs.
+The Render API token comes from `RENDER_API_KEY` or a hidden,
+unsaved prompt. The push updates only that backend environment value and does
+not replace `onramp deploy`. An ignored local `.env` loaded by your shell or
+container tool remains supported.
 When `AUTH.enabled` is true, the Render Blueprint generates separate signing
 and identity secrets, derives the public action URL, and prompts for the Resend
 key and verified sender. A custom `AUTH.email_sender` owns its own provider

@@ -4,6 +4,7 @@ sys.dont_write_bytecode = True
 
 import argparse
 import asyncio
+import getpass
 import importlib
 import json
 import os
@@ -18,6 +19,7 @@ import atexit
 import tempfile
 import threading
 import time
+import warnings
 import webbrowser
 from pathlib import Path
 from watchfiles import watch
@@ -33,6 +35,7 @@ from .deployment import (
     check_deployment,
     deploy_project,
     initialize_deployment,
+    load_deployment_config,
 )
 from .frontend import (
     create_frontend,
@@ -43,6 +46,14 @@ from .frontend import (
     storage_frontend,
 )
 from .project import atomic_write, package_version, target_managed_files, write_project_manifest
+from .secrets import (
+    SecretStore,
+    SecretStoreError,
+    environment_with_local_secrets,
+    local_secret_environment,
+    push_render_secret,
+    validate_secret_name,
+)
 from .upgrade import upgrade_to_version
 from types import SimpleNamespace
 import re
@@ -196,7 +207,13 @@ def disable_backend():
 def handle_prepmigrations(args):
     """Handle the prepmigrations command"""
     name = args.name if hasattr(args, 'name') and args.name else None
-    success = create_migration(name)
+    selected = _select_environment(getattr(args, "environment", None))
+    try:
+        with local_secret_environment(PROJECT_ROOT, selected):
+            success = create_migration(name)
+    except SecretStoreError as error:
+        print(f"Could not load local secrets: {error}")
+        return 1
     if success:
         print("Migration prepared successfully")
     else:
@@ -207,7 +224,13 @@ def handle_prepmigrations(args):
 def handle_migrate(args):
     """Handle the migrate command (with auto-prep)"""
     name = args.name if hasattr(args, 'name') and args.name else None
-    success = migrate(name)
+    selected = _select_environment(getattr(args, "environment", None))
+    try:
+        with local_secret_environment(PROJECT_ROOT, selected):
+            success = migrate(name)
+    except SecretStoreError as error:
+        print(f"Could not load local secrets: {error}")
+        return 1
     if success:
         print("Migration completed successfully")
     else:
@@ -220,25 +243,165 @@ def handle_db(args):
     """Handle explicit development and production migration stages."""
     operation = args.name
     extra = getattr(args, "extra", [])
-    if operation == "make":
-        if len(extra) > 1:
-            print("Usage: 'onramp db make [name]'")
-            return 2
-        success = create_migration(extra[0] if extra else None)
-    elif operation == "upgrade":
-        if extra:
-            print("Usage: 'onramp db upgrade'")
-            return 2
-        success = apply_migrations()
-    elif operation == "check":
-        if extra:
-            print("Usage: 'onramp db check'")
-            return 2
-        success = check_migrations()
-    else:
-        print("Usage: 'onramp db <make [name] | upgrade | check>'")
-        return 2
+    selected = _select_environment(getattr(args, "environment", None))
+    try:
+        with local_secret_environment(PROJECT_ROOT, selected):
+            if operation == "make":
+                if len(extra) > 1:
+                    print("Usage: 'onramp db make [name]'")
+                    return 2
+                success = create_migration(extra[0] if extra else None)
+            elif operation == "upgrade":
+                if extra:
+                    print("Usage: 'onramp db upgrade'")
+                    return 2
+                success = apply_migrations()
+            elif operation == "check":
+                if extra:
+                    print("Usage: 'onramp db check'")
+                    return 2
+                success = check_migrations()
+            else:
+                print("Usage: 'onramp db <make [name] | upgrade | check>'")
+                return 2
+    except SecretStoreError as error:
+        print(f"Could not load local secrets: {error}")
+        return 1
     return 0 if success else 1
+
+
+def handle_secret(args):
+    """Store local backend secrets or explicitly hand one to Render."""
+    operation = args.name
+    extra = list(getattr(args, "extra", []))
+    if operation is None:
+        print(
+            "Usage: 'onramp secret <NAME> | list | check NAME | "
+            "delete NAME | push NAME'"
+        )
+        return 2
+
+    if operation == "set":
+        if len(extra) != 1:
+            print("Usage: 'onramp secret set <NAME>'")
+            return 2
+        action, name = "set", extra[0]
+    elif operation in {"check", "delete", "push"}:
+        if len(extra) != 1:
+            print(f"Usage: 'onramp secret {operation} <NAME>'")
+            return 2
+        action, name = operation, extra[0]
+    elif operation == "list":
+        if extra:
+            print("Usage: 'onramp secret list'")
+            return 2
+        action, name = "list", None
+    else:
+        action, name = "set", operation
+        if extra:
+            print(
+                "Do not put secret values in command arguments; shell history and "
+                "process listings can expose them. Rerun as 'onramp secret NAME'."
+            )
+            return 2
+
+    if action == "push":
+        config = load_deployment_config(PROJECT_ROOT)
+        deployment_environment = str(
+            args.environment
+            or (config or {}).get("environment")
+            or "production"
+        ).strip().lower()
+        scope = None
+    else:
+        deployment_environment = None
+        scope = args.environment
+    scope_label = f"the {scope} override" if scope else "all environments"
+
+    try:
+        if name is not None:
+            name = validate_secret_name(name)
+        store = SecretStore(PROJECT_ROOT)
+        if action == "set":
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", getpass.GetPassWarning)
+                    value = getpass.getpass(f"Enter {name} for {scope_label}: ")
+            except (EOFError, getpass.GetPassWarning):
+                print("A secure interactive prompt is required to store a secret.")
+                return 1
+            store.set(scope, name, value)
+            print(f"Stored {name} for {scope_label} in the OS credential store.")
+            return 0
+        if action == "list":
+            names = store.names(scope)
+            if names:
+                heading = (
+                    f"Local secret overrides for {scope}:"
+                    if scope
+                    else "Shared local secrets:"
+                )
+                print(heading)
+                for stored_name in names:
+                    print(f"  {stored_name}")
+            else:
+                print(f"No local secrets are stored for {scope_label}.")
+            return 0
+        if action == "check":
+            value = store.get(scope, name)
+            if value is not None:
+                print(f"{name} is stored for {scope_label}.")
+                return 0
+            if scope and store.get(None, name) is not None:
+                print(f"{name} uses the shared value in {scope}.")
+                return 0
+            print(f"{name} is not stored for {scope_label}.")
+            return 1
+        if action == "delete":
+            if not store.delete(scope, name):
+                if scope and store.get(None, name) is not None:
+                    print(
+                        f"No {scope} override was stored for {name}; "
+                        "the shared value remains."
+                    )
+                else:
+                    print(f"{name} was not stored for {scope_label}.")
+                return 1
+            print(f"Deleted {name} for {scope_label} from the OS credential store.")
+            return 0
+
+        value = store.resolve(deployment_environment, name)
+        if value is None:
+            print(
+                f"{name} has no shared value or {deployment_environment} override. "
+                f"Store it with 'onramp secret {name}', adding --environment "
+                f"{deployment_environment} only if that value should differ."
+            )
+            return 1
+        render_api_key = os.environ.get("RENDER_API_KEY")
+        if not render_api_key:
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", getpass.GetPassWarning)
+                    render_api_key = getpass.getpass("Render API key (not saved): ")
+            except (EOFError, getpass.GetPassWarning):
+                print("A Render API key is required to push the secret.")
+                return 1
+        service = push_render_secret(
+            PROJECT_ROOT,
+            deployment_environment,
+            name,
+            value,
+            render_api_key,
+        )
+        print(
+            f"Updated {name} on Render backend service {service}. "
+            "Deploy or restart the service when you are ready to use it."
+        )
+        return 0
+    except SecretStoreError as error:
+        print(f"Secret operation failed: {error}")
+        return 1
 
 
 def handle_deploy(args):
@@ -692,6 +855,11 @@ def _start_uvicorn_worker(app_dir: str, port: int):
     """Start and track a worker owned by the OnRamp parent process."""
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env = environment_with_local_secrets(
+        PROJECT_ROOT,
+        env.get("ONRAMP_ENVIRONMENT", "development"),
+        env,
+    )
     popen_options = {}
     if os.name == "nt":
         popen_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -1234,8 +1402,13 @@ def handle_account(args):
         finally:
             await Tortoise.close_connections()
 
+    selected = _select_environment(getattr(args, "environment", None))
     try:
-        return 0 if asyncio.run(classify()) else 1
+        with local_secret_environment(PROJECT_ROOT, selected):
+            return 0 if asyncio.run(classify()) else 1
+    except SecretStoreError as error:
+        print(f"Could not load local secrets: {error}")
+        return 1
     except (ValueError, RuntimeError) as error:
         print(f"Could not classify account: {error}")
         return 1
@@ -1256,7 +1429,12 @@ def handle_email(args):
     except Exception:
         print("Could not load app/settings.py for the email check.")
         return 1
-    return run_email_command(args, APP_DIR)
+    try:
+        with local_secret_environment(PROJECT_ROOT, selected):
+            return run_email_command(args, APP_DIR)
+    except SecretStoreError as error:
+        print(f"Could not load local secrets: {error}")
+        return 1
 
 
 def handle_notifications(args):
@@ -1375,8 +1553,13 @@ def handle_notifications(args):
         finally:
             await Tortoise.close_connections()
 
+    selected = _select_environment(getattr(args, "environment", None))
     try:
-        return 0 if asyncio.run(operate()) else 1
+        with local_secret_environment(PROJECT_ROOT, selected):
+            return 0 if asyncio.run(operate()) else 1
+    except SecretStoreError as error:
+        print(f"Could not load local secrets: {error}")
+        return 1
     except (ValueError, RuntimeError) as error:
         print(f"Notification operation failed: {error}")
         return 1
@@ -1423,6 +1606,11 @@ def main():
   {FRAMEWORK_NAME.lower()} notifications cleanup [--unverified-days DAYS]
   {FRAMEWORK_NAME.lower()} notifications anonymize <email>
   {FRAMEWORK_NAME.lower()} notifications dispatch <event-key> --subject SUBJECT (--text TEXT | --text-file PATH) [--send]
+  {FRAMEWORK_NAME.lower()} secret <NAME>
+  {FRAMEWORK_NAME.lower()} secret list
+  {FRAMEWORK_NAME.lower()} secret check <NAME>
+  {FRAMEWORK_NAME.lower()} secret delete <NAME>
+  {FRAMEWORK_NAME.lower()} secret push <NAME> [--environment staging|production]
   {FRAMEWORK_NAME.lower()} deploy init [render|container]
   {FRAMEWORK_NAME.lower()} deploy --check
   {FRAMEWORK_NAME.lower()} deploy [render|container]
@@ -1441,6 +1629,8 @@ Active/current environments are kept. First-time installations and repairs still
 Xcode and Rosetta setup always require separate software-license consent.
 Use --environment development, staging, or production to select one shared
 backend, web, and native runtime profile.
+Secret values are entered through a hidden prompt. Never place a secret value
+directly in the command, where shell history and process listings can expose it.
 repair:ios preserves Podfile.lock unless --fresh is set.
 upgrade creates recoverable backups and never overwrites modified managed files.
 """,
@@ -1565,7 +1755,7 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             parser.error("Use onramp storage [--check | --clean] [--include-other-projects]")
 
         # Read-only service/storage diagnostics must not repair project files.
-        if args.command not in {"email", "storage"}:
+        if args.command not in {"email", "secret", "storage"}:
             _clean_empty_shadow_dirs(PROJECT_ROOT)
 
         if args.command == "new":
@@ -1679,6 +1869,9 @@ upgrade creates recoverable backups and never overwrites modified managed files.
 
         elif args.command == "db":
             return handle_db(args)
+
+        elif args.command == "secret":
+            return handle_secret(args)
 
         elif args.command == "deploy":
             return handle_deploy(args)

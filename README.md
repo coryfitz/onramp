@@ -161,6 +161,8 @@ unless `AUTH.email_sender` explicitly supplies a custom sender.
 Check or test delivery from the project root:
 
 ```bash
+onramp secret RESEND_API_KEY                         # hidden prompt; shared value
+onramp secret RESEND_API_KEY --environment staging  # optional staging override
 onramp email --check
 onramp email test you@your-domain.com                  # preview only
 onramp email test you@your-domain.com --send           # local outbox in development
@@ -187,6 +189,47 @@ message ID means accepted for delivery, not proof it reached the inbox. Confirm
 receipt in your own mailbox, then run the actual app code-entry flow. See
 [Resend sending domains](https://resend.com/docs/knowledge-base/how-do-I-create-an-email-address-or-sender-in-resend)
 and [sending API keys](https://resend.com/docs/dashboard/api-keys/introduction).
+
+### Secrets
+
+OnRamp can store backend secrets in the operating system credential store,
+scoped to the current project. The safe shorthand prompts for a shared value
+without displaying it:
+
+```bash
+onramp secret RESEND_API_KEY
+onramp secret list
+onramp secret check RESEND_API_KEY
+onramp secret delete RESEND_API_KEY
+```
+
+Never add the value as another command argument. A command such as `onramp
+secret RESEND_API_KEY actual-value` is refused because command arguments can
+remain in shell history and can be visible in process listings. Explicit
+process environment values take precedence over locally stored values. Local
+secrets are added only to the Python development server and backend maintenance,
+account, email, and notification commands; they are not passed to web or native
+frontend tooling.
+
+The shared value is used in development, staging, and production. Add
+`--environment staging` or `--environment production` only when that environment
+needs a different value. Resolution order is: explicit process/provider value,
+environment-specific override, then shared project value.
+
+For a configured Render backend, push the resolved value explicitly:
+
+```bash
+onramp secret push RESEND_API_KEY
+# Only if production uses a different key, set the override before pushing:
+onramp secret RESEND_API_KEY --environment production
+onramp secret push RESEND_API_KEY --environment production
+```
+
+The push command uses the backend service ID from `onramp.toml` or the existing
+`ONRAMP_RENDER_*_SERVICE` variables. It reads `RENDER_API_KEY` from the current
+process, or asks for it through a hidden prompt without saving it. The secret
+value and provider token are never printed. Pushing updates the provider's
+environment; deployment remains an explicit `onramp deploy` operation.
 
 Verification messages include table-based HTML and a plain-text fallback. For
 project branding, set `AUTH['verification_email_renderer']` to a synchronous
@@ -380,7 +423,9 @@ available for a single selected service.
 Deployment topology and nonsecret build settings belong in `onramp.toml`.
 Backend runtime behavior remains in `app/settings.py`, while passwords, API
 tokens, database URLs, and deploy hooks remain in the provider's secret
-environment. A combined container can be represented as one target whose
+environment. `onramp secret` can broker a named value from the local OS
+credential store to a configured Render backend without placing it in
+`onramp.toml`. A combined container can be represented as one target whose
 `components` are `["backend", "web"]`.
 
 Every host starts the production process with:
@@ -392,8 +437,9 @@ onramp start
 This command listens on `PORT` (or `ONRAMP_PORT`), honors `ONRAMP_HOST`,
 supports `ONRAMP_WORKERS`, and hands platform termination signals directly to
 Uvicorn for graceful shutdown. Secrets belong in the provider secret manager
-or an ignored local `.env` loaded by your shell or container tool, never in
-`app/settings.py` or `onramp.toml`.
+or the project-scoped OS credential store managed by `onramp secret`, never in
+`app/settings.py` or `onramp.toml`. An ignored local `.env` loaded by your shell
+or container tool remains supported for workflows that need it.
 
 Run a native app from the project directory:
 

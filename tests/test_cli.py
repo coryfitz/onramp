@@ -83,6 +83,88 @@ def test_runtime_environment_selection_is_shared_and_validated(monkeypatch):
         cli._select_environment("preview")
 
 
+def test_secret_command_uses_hidden_prompt_and_never_prints_value(
+    monkeypatch, capsys
+):
+    calls = []
+
+    class Store:
+        def __init__(self, project_root):
+            calls.append(("init", project_root))
+
+        def set(self, environment, name, value):
+            calls.append(("set", environment, name, value))
+
+    monkeypatch.setattr(cli, "SecretStore", Store)
+    monkeypatch.setattr(cli.getpass, "getpass", lambda _prompt: "resend-secret")
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["onramp", "secret", "RESEND_API_KEY", "--environment", "staging"],
+    )
+
+    assert cli.main() == 0
+    output = capsys.readouterr().out
+    assert calls[-1] == ("set", "staging", "RESEND_API_KEY", "resend-secret")
+    assert "RESEND_API_KEY" in output
+    assert "resend-secret" not in output
+
+
+def test_secret_command_without_environment_stores_shared_value(
+    monkeypatch, capsys
+):
+    calls = []
+
+    class Store:
+        def __init__(self, _project_root):
+            pass
+
+        def set(self, environment, name, value):
+            calls.append((environment, name, value))
+
+    monkeypatch.setattr(cli, "SecretStore", Store)
+    monkeypatch.setattr(cli.getpass, "getpass", lambda _prompt: "resend-secret")
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["onramp", "secret", "RESEND_API_KEY"],
+    )
+
+    assert cli.main() == 0
+    output = capsys.readouterr().out
+    assert calls == [(None, "RESEND_API_KEY", "resend-secret")]
+    assert "all environments" in output
+    assert "resend-secret" not in output
+
+
+def test_secret_command_rejects_positional_value_without_echoing_it(
+    monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["onramp", "secret", "RESEND_API_KEY", "resend-secret"],
+    )
+
+    assert cli.main() == 2
+    output = capsys.readouterr().out
+    assert "Do not put secret values in command arguments" in output
+    assert "resend-secret" not in output
+
+
+def test_secret_command_dispatches_to_handler(monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        cli,
+        "handle_secret",
+        lambda args: captured.append((args.name, args.extra)) or 7,
+    )
+    monkeypatch.setattr(cli.sys, "argv", ["onramp", "secret", "list"])
+
+    assert cli.main() == 7
+    assert captured == [("list", [])]
+
+
 def test_notification_dispatch_requires_explicit_send_flag(monkeypatch):
     captured = []
     monkeypatch.setattr(
@@ -1013,11 +1095,24 @@ def test_uvicorn_worker_isolated_from_terminal_process_group(
 
     monkeypatch.setattr(cli.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(cli, "_uvicorn_cmd", lambda port: ["uvicorn", str(port)])
+    monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setattr(
+        cli,
+        "environment_with_local_secrets",
+        lambda root, environment, base: {
+            **base,
+            "RESEND_API_KEY": f"stored-for-{environment}",
+            "SECRET_PROJECT_ROOT": root,
+        },
+    )
+    monkeypatch.setenv("ONRAMP_ENVIRONMENT", "staging")
     cli.spawned_processes.clear()
 
     assert cli._start_uvicorn_worker(str(tmp_path), 8123) is process
     assert captured["command"] == ["uvicorn", "8123"]
     assert captured["cwd"] == str(tmp_path)
+    assert captured["env"]["RESEND_API_KEY"] == "stored-for-staging"
+    assert captured["env"]["SECRET_PROJECT_ROOT"] == str(tmp_path)
     if os.name == "nt":
         assert captured["creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP
     else:
