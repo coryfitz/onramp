@@ -8,6 +8,8 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
+import sys
 from typing import Mapping
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
@@ -376,3 +378,25 @@ def push_render_secret(
             f"Render rejected the secret update (HTTP {status})."
         )
     return service
+
+
+def copy_secret_to_clipboard(value: str, *, runner=subprocess.run) -> None:
+    """Copy a secret on macOS without passing it as an argument or printing it."""
+    value = validate_secret_value(value)
+    if sys.platform != "darwin":
+        raise SecretStoreError(
+            "Secret clipboard copy is currently supported on macOS only."
+        )
+    try:
+        result = runner(
+            ["/usr/bin/pbcopy"],
+            input=value.encode("utf-8"),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise SecretStoreError("Could not copy the secret to the clipboard.") from error
+    if result.returncode != 0:
+        raise SecretStoreError("Could not copy the secret to the clipboard.")

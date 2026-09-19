@@ -152,6 +152,43 @@ def test_secret_command_rejects_positional_value_without_echoing_it(
     assert "resend-secret" not in output
 
 
+def test_secret_copy_resolves_environment_and_never_prints_value(monkeypatch, capsys):
+    calls = []
+
+    class Store:
+        def __init__(self, _project_root):
+            pass
+
+        def resolve(self, environment, name):
+            calls.append((environment, name))
+            return "resend-secret"
+
+    monkeypatch.setattr(cli, "SecretStore", Store)
+    monkeypatch.setattr(cli, "copy_secret_to_clipboard", lambda value: calls.append(value))
+    monkeypatch.setattr(cli, "load_deployment_config", lambda _root: {"environment": "production"})
+    monkeypatch.setattr(
+        cli.sys, "argv", ["onramp", "secret", "copy", "RESEND_API_KEY"]
+    )
+
+    assert cli.main() == 0
+    assert calls == [("production", "RESEND_API_KEY"), "resend-secret"]
+    output = capsys.readouterr().out
+    assert "RESEND_API_KEY" in output
+    assert "resend-secret" not in output
+    assert "clipboard history" in output
+
+
+def test_secret_copy_rejects_extra_positional_values(monkeypatch, capsys):
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["onramp", "secret", "copy", "RESEND_API_KEY", "resend-secret"],
+    )
+
+    assert cli.main() == 2
+    assert "resend-secret" not in capsys.readouterr().out
+
+
 def test_secret_command_dispatches_to_handler(monkeypatch):
     captured = []
     monkeypatch.setattr(

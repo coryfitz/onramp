@@ -49,6 +49,7 @@ from .project import atomic_write, package_version, target_managed_files, write_
 from .secrets import (
     SecretStore,
     SecretStoreError,
+    copy_secret_to_clipboard,
     environment_with_local_secrets,
     local_secret_environment,
     push_render_secret,
@@ -277,7 +278,7 @@ def handle_secret(args):
     if operation is None:
         print(
             "Usage: 'onramp secret <NAME> | list | check NAME | "
-            "delete NAME | push NAME'"
+            "delete NAME | copy NAME | push NAME'"
         )
         return 2
 
@@ -286,7 +287,7 @@ def handle_secret(args):
             print("Usage: 'onramp secret set <NAME>'")
             return 2
         action, name = "set", extra[0]
-    elif operation in {"check", "delete", "push"}:
+    elif operation in {"check", "delete", "copy", "push"}:
         if len(extra) != 1:
             print(f"Usage: 'onramp secret {operation} <NAME>'")
             return 2
@@ -305,7 +306,7 @@ def handle_secret(args):
             )
             return 2
 
-    if action == "push":
+    if action in {"copy", "push"}:
         config = load_deployment_config(PROJECT_ROOT)
         deployment_environment = str(
             args.environment
@@ -378,6 +379,14 @@ def handle_secret(args):
                 f"{deployment_environment} only if that value should differ."
             )
             return 1
+        if action == "copy":
+            copy_secret_to_clipboard(value)
+            print(
+                f"Copied {name} for {deployment_environment} to the clipboard. "
+                "Paste it promptly, then replace the clipboard contents; other "
+                "apps and clipboard history may be able to read it."
+            )
+            return 0
         render_api_key = os.environ.get("RENDER_API_KEY")
         if not render_api_key:
             try:
@@ -1610,6 +1619,7 @@ def main():
   {FRAMEWORK_NAME.lower()} secret list
   {FRAMEWORK_NAME.lower()} secret check <NAME>
   {FRAMEWORK_NAME.lower()} secret delete <NAME>
+  {FRAMEWORK_NAME.lower()} secret copy <NAME> [--environment staging|production]
   {FRAMEWORK_NAME.lower()} secret push <NAME> [--environment staging|production]
   {FRAMEWORK_NAME.lower()} deploy init [render|container]
   {FRAMEWORK_NAME.lower()} deploy --check

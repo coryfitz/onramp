@@ -1,6 +1,8 @@
 import json
 import os
 from pathlib import Path
+import subprocess
+from types import SimpleNamespace
 from urllib.error import HTTPError
 
 import pytest
@@ -8,6 +10,7 @@ import pytest
 from onramp.secrets import (
     SecretStore,
     SecretStoreError,
+    copy_secret_to_clipboard,
     environment_with_local_secrets,
     local_secret_environment,
     push_render_secret,
@@ -126,6 +129,55 @@ def test_environment_override_wins_over_shared_secret(tmp_path):
 
     assert development["RESEND_API_KEY"] == "shared"
     assert staging["RESEND_API_KEY"] == "staging"
+
+
+def test_copy_secret_to_clipboard_uses_stdin_without_leaking_output(monkeypatch):
+    monkeypatch.setattr("onramp.secrets.sys.platform", "darwin")
+    captured = {}
+
+    def runner(command, **kwargs):
+        captured.update(command=command, **kwargs)
+        return SimpleNamespace(returncode=0)
+
+    copy_secret_to_clipboard("resend-secret", runner=runner)
+
+    assert captured["command"] == ["/usr/bin/pbcopy"]
+    assert captured["input"] == b"resend-secret"
+    assert captured["stdout"] == subprocess.DEVNULL
+    assert captured["stderr"] == subprocess.DEVNULL
+    assert captured["timeout"] == 5
+    assert captured["check"] is False
+
+
+def test_copy_secret_to_clipboard_rejects_unsupported_platform(monkeypatch):
+    monkeypatch.setattr("onramp.secrets.sys.platform", "linux")
+
+    with pytest.raises(SecretStoreError, match="macOS only"):
+        copy_secret_to_clipboard("resend-secret", runner=lambda *_args, **_kwargs: None)
+
+
+def test_copy_secret_to_clipboard_hides_provider_error(monkeypatch):
+    monkeypatch.setattr("onramp.secrets.sys.platform", "darwin")
+
+    def runner(_command, **_kwargs):
+        raise OSError("resend-secret")
+
+    with pytest.raises(SecretStoreError, match="Could not copy") as error:
+        copy_secret_to_clipboard("resend-secret", runner=runner)
+
+    assert "resend-secret" not in str(error.value)
+
+
+def test_copy_secret_to_clipboard_hides_failed_command_output(monkeypatch):
+    monkeypatch.setattr("onramp.secrets.sys.platform", "darwin")
+
+    with pytest.raises(SecretStoreError, match="Could not copy") as error:
+        copy_secret_to_clipboard(
+            "resend-secret",
+            runner=lambda *_args, **_kwargs: SimpleNamespace(returncode=1),
+        )
+
+    assert "resend-secret" not in str(error.value)
 
 
 def _write_render_config(root: Path):

@@ -118,6 +118,8 @@ value in shell history:
 onramp secret RESEND_API_KEY
 onramp secret list
 onramp secret check RESEND_API_KEY
+# For a one-time macOS paste into a hosting provider's secret field:
+onramp secret copy RESEND_API_KEY
 # Only when staging needs a different value:
 onramp secret RESEND_API_KEY --environment staging
 ```
@@ -133,6 +135,10 @@ commands, never the web or native frontend toolchain. Delete a value with
 only that override. Do not append a
 secret value to the command: positional values are refused because shell
 history and process listings can expose them.
+`onramp secret copy` uses the configured deployment environment (or
+`--environment staging|production`) and never prints the value. Paste promptly
+and replace the clipboard contents afterward: other apps and clipboard history
+may still be able to read it. This clipboard command is available on macOS.
 
 The same development outbox handles application notifications. Set
 `ONRAMP_PUBLIC_URL` in hosted environments for signed unsubscribe links. Use

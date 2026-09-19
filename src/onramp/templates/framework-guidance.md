@@ -67,6 +67,9 @@ tools working on __ONRAMP_APP_NAME__.
 - `onramp secret push NAME --environment staging|production` is an explicit
   provider handoff for a configured Render backend. It changes only the named
   backend environment value; deployment and restart remain separate actions.
+- On macOS, `onramp secret copy NAME` can copy the effective deployment secret
+  for a one-time provider setup without displaying it. A clipboard is not a
+  protected secret store: paste promptly and replace its contents afterward.
 - Framework notification dispatches preview unless `--send` is explicit. Treat
   each event key as application-global, filter by runtime environment, preserve
   delivery idempotency and suppression, and never bypass the application

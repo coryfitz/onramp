@@ -211,6 +211,7 @@ onramp secret RESEND_API_KEY
 onramp secret list
 onramp secret check RESEND_API_KEY
 onramp secret delete RESEND_API_KEY
+onramp secret copy RESEND_API_KEY
 ```
 
 Never add the value as another command argument. A command such as `onramp
@@ -225,6 +226,14 @@ The shared value is used in development, staging, and production. Add
 `--environment staging` or `--environment production` only when that environment
 needs a different value. Resolution order is: explicit process/provider value,
 environment-specific override, then shared project value.
+
+On macOS, `onramp secret copy RESEND_API_KEY` copies the effective secret for
+the configured deployment environment without displaying it or putting it in
+shell history. This is useful for the first Render Blueprint setup, before a
+service exists for `secret push`. Paste it promptly and replace the clipboard
+contents afterward: other apps, clipboard managers, and clipboard history may
+still be able to read a copied secret. Use `--environment staging` or
+`--environment production` to select a different override.
 
 For a configured Render backend, push the resolved value explicitly:
 
