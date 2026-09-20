@@ -131,6 +131,25 @@ def test_run_frontend_forwards_rebuild(tmp_path, monkeypatch):
     assert captured["command"][-1] == "--rebuild"
 
 
+def test_run_frontend_forwards_production_ios_without_backend_or_metro(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run(command, cwd, env, action):
+        captured.update(command=command, cwd=cwd, env=env, action=action)
+        return True
+
+    monkeypatch.setattr(frontend, "_run_frontend_command", fake_run)
+
+    assert frontend.run_frontend(
+        "ios", tmp_path, environment="production", production=True,
+    )
+    assert captured["command"][-3:] == ["--environment", "production", "--production"]
+    assert "--backend-port" not in captured["command"]
+    assert "--metro-port" not in captured["command"]
+    with pytest.raises(ValueError, match="only for ios"):
+        frontend.run_frontend("android", tmp_path, production=True)
+
+
 @pytest.mark.parametrize("platform", ["ios", "android", "mobile"])
 @pytest.mark.parametrize("blocking", [True, False])
 @pytest.mark.parametrize("force_updates", [True, False])

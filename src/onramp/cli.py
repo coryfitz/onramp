@@ -625,13 +625,32 @@ def run_ios(
     rebuild: bool = False,
     environment: str | None = None,
     force_emulator_updates: bool = False,
+    production: bool = False,
 ):
-    """Run iOS simulator; if BACKEND=True also start the backend dev server."""
+    """Run iOS development or a self-contained production Release app."""
     if not os.path.exists(BUILD_DIR):
         print("Build directory not found. Run 'onramp new <name>' first.")
         return False
 
-    selected_environment = _select_environment(environment)
+    if production and environment not in {None, "production"}:
+        raise ValueError("--production cannot be combined with a different environment")
+    selected_environment = _select_environment("production" if production else environment)
+    production = production or selected_environment == "production"
+    if production:
+        if port != 8000 or metro_port is not None or watch_diagnostics or rebuild:
+            raise ValueError("iOS production runs do not use a local backend, Metro, diagnostics, or --rebuild")
+        env = ensure_node_env()
+        env["ONRAMP_ENVIRONMENT"] = "production"
+        print("Building and running iOS Release against the configured production API...")
+        return run_frontend(
+            "ios",
+            BUILD_DIR,
+            app_name=os.path.basename(PROJECT_ROOT),
+            env=env,
+            environment="production",
+            production=True,
+            force_emulator_updates=force_emulator_updates,
+        )
     env = ensure_node_env()
     env["ONRAMP_ENVIRONMENT"] = selected_environment
     project_name = os.path.basename(PROJECT_ROOT)
@@ -1596,6 +1615,7 @@ def main():
   {FRAMEWORK_NAME.lower()} start [--host 0.0.0.0] [--port 8000]
   {FRAMEWORK_NAME.lower()} web
   {FRAMEWORK_NAME.lower()} ios [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild] [--force]
+  {FRAMEWORK_NAME.lower()} ios --production [--force]
   {FRAMEWORK_NAME.lower()} android [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild] [--force]
   {FRAMEWORK_NAME.lower()} mobile [--port 8000] [--metro-port 8081] [--watch-diagnostics] [--rebuild] [--force]
   {FRAMEWORK_NAME.lower()} doctor [web|ios|android|mobile|all]
@@ -1630,6 +1650,9 @@ def main():
 The --port option controls the Python backend. --metro-port controls the
 React Native bundler. --watch-diagnostics prints source paths that trigger
 Fast Refresh. --rebuild forces native apps to rebuild and reinstall.
+For iOS, --production builds and runs Release on a simulator against the
+configured production API, without Metro or a local backend. It does not
+archive, sign for distribution, upload, or publish the app.
 For ios, android, and mobile, --force selects the next available backend port
 when the requested port is occupied and accepts available emulator updates
 without prompting.
@@ -1682,6 +1705,11 @@ upgrade creates recoverable backups and never overwrites modified managed files.
             "--rebuild",
             action="store_true",
             help="Force native apps to rebuild and reinstall",
+        )
+        parser.add_argument(
+            "--production",
+            action="store_true",
+            help="Build and run iOS Release locally without Metro or a local backend",
         )
         parser.add_argument(
             "--force",
@@ -1759,6 +1787,13 @@ upgrade creates recoverable backups and never overwrites modified managed files.
 
         if args.force and args.command not in {"ios", "android", "mobile"}:
             parser.error("--force is only supported for ios, android, and mobile")
+        if args.production and args.command != "ios":
+            parser.error("--production is only supported for ios")
+        if args.command == "ios" and (args.production or args.environment == "production"):
+            if args.production and args.environment not in {None, "production"}:
+                parser.error("--production cannot be combined with a different environment")
+            if args.port != 8000 or args.metro_port is not None or args.watch_diagnostics or args.rebuild:
+                parser.error("iOS production runs do not use a local backend, Metro, diagnostics, or --rebuild")
         if (args.clean or args.include_other_projects) and args.command != "storage":
             parser.error("--clean and --include-other-projects are only supported for storage")
         if args.command == "storage" and (args.name or args.extra or (args.check and args.clean)):
@@ -1824,6 +1859,8 @@ upgrade creates recoverable backups and never overwrites modified managed files.
                 run_arguments["environment"] = args.environment
             if args.force:
                 run_arguments["force_emulator_updates"] = True
+            if args.production:
+                run_arguments["production"] = True
             return 0 if run_ios(args.port, **run_arguments) else 1
 
         elif args.command == "android":

@@ -122,6 +122,7 @@ def run_frontend(
     environment: str | None = None,
     force_emulator_updates: bool = False,
     backend_port: int | None = None,
+    production: bool = False,
 ) -> bool:
     """Prepare and run a frontend platform with onramp-js."""
     if platform not in {"web", "ios", "android", "mobile"}:
@@ -130,6 +131,10 @@ def run_frontend(
         raise ValueError("Emulator updates are only supported for ios, android, and mobile")
     if backend_port is not None and platform == "web":
         raise ValueError("Backend port forwarding is only supported for ios, android, and mobile")
+    if production and platform != "ios":
+        raise ValueError("Production native runs are currently supported only for ios")
+    if production and (backend_port is not None or metro_port is not None or watch_diagnostics or rebuild):
+        raise ValueError("iOS production runs do not use a local backend, Metro, diagnostics, or --rebuild")
 
     output_path = Path(output_dir).resolve()
     arguments = ["run", platform, "--output", str(output_path)]
@@ -147,6 +152,8 @@ def run_frontend(
         arguments.append("--rebuild")
     if force_emulator_updates:
         arguments.append("--force")
+    if production:
+        arguments.append("--production")
 
     return _run_frontend_command(
         arguments,

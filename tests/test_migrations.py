@@ -50,7 +50,8 @@ def test_generated_table_descriptions_cannot_inject_sql_delimiters(tmp_path):
     assert "session; only" not in migration.read_text()
 
 
-def test_native_migrations_create_and_update_sqlite_schema(tmp_path):
+def test_native_migrations_create_and_update_sqlite_schema(tmp_path, monkeypatch):
+    monkeypatch.setenv("ONRAMP_ENVIRONMENT", "development")
     app_dir = create_migration_project(tmp_path)
     manager = migration_manager(app_dir)
 
@@ -86,7 +87,8 @@ def test_native_migrations_create_and_update_sqlite_schema(tmp_path):
     assert "ops.AddField" in manager.migration_files()[-1].read_text()
 
 
-def test_initializing_an_empty_project_waits_for_its_first_model(tmp_path, capsys):
+def test_initializing_an_empty_project_waits_for_its_first_model(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("ONRAMP_ENVIRONMENT", "development")
     app_dir = tmp_path / "app"
     models_dir = app_dir / "models"
     models_dir.mkdir(parents=True)
@@ -118,6 +120,7 @@ def test_initializing_an_empty_project_waits_for_its_first_model(tmp_path, capsy
     reason="ONRAMP_TEST_POSTGRES_URL is not configured",
 )
 def test_sqlite_generated_migration_applies_to_postgresql(tmp_path, monkeypatch):
+    monkeypatch.setenv("ONRAMP_ENVIRONMENT", "development")
     app_dir = create_migration_project(tmp_path)
     manager = migration_manager(app_dir)
     assert manager.init_migrations()

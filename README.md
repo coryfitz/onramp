@@ -466,11 +466,19 @@ Run a native app from the project directory:
 onramp ios
 onramp android
 onramp mobile
+onramp ios --production
 ```
 
 Pass `--environment development|staging|production` to select the matching
 runtime/API profile from `build/app.json`. Development provides emulator-safe
 loopback defaults; staging conventionally uses `.beta` native identifiers.
+`onramp ios --production` builds and launches the iOS **Release** configuration
+on a simulator using the production profile. It bundles JavaScript into the
+app and does not start Metro or the local Python backend. This is a local
+production-behavior check, not an App Store archive, signing, TestFlight
+upload, or public release. `onramp ios --environment production` uses the same
+Release behavior; development-only port, Metro, watcher, and rebuild options
+cannot be combined with it.
 
 After the first successful native build, OnRamp reopens the installed app
 without recompiling when its native inputs are unchanged. JavaScript and
@@ -740,7 +748,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 uv run onramp upgrade
-uv run onramp upgrade --to 0.5.55
+uv run onramp upgrade --to 0.5.56
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -780,7 +788,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.55`. Project schema versions are tracked separately from package
+`onramp~=0.5.56`. Project schema versions are tracked separately from package
 versions; `onramp upgrade` applies any required schema migrations, including
 those introduced by patch releases.
 

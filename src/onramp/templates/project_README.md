@@ -29,6 +29,7 @@ Run commands from this project root through the project environment:
 ```bash
 uv run onramp run
 uv run onramp ios
+uv run onramp ios --production
 uv run onramp android
 uv run onramp mobile
 uv run onramp doctor ios
@@ -44,6 +45,10 @@ Use `--environment development`, `--environment staging`, or
 `--environment production` to select one backend, web, and native profile.
 Frontend profile URLs, display-name suffixes, and identifier suffixes live in
 `build/app.json`.
+For an iOS production-behavior check, `onramp ios --production` builds and
+launches a self-contained Release app on a simulator against the production
+profile. It does not run a local backend or Metro, and it does not archive,
+sign for distribution, upload to TestFlight, or publish the app.
 
 Add `--force` to `onramp ios`, `onramp android`, or `onramp mobile` to use the
 next available backend port when the requested port is occupied and accept

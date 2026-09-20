@@ -1343,6 +1343,71 @@ def test_main_dispatches_native_force_flag(monkeypatch, platform, force_updates)
     })]
 
 
+def test_ios_production_runs_release_without_starting_a_local_backend(tmp_path, monkeypatch):
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    calls = []
+    monkeypatch.setattr(cli, "BUILD_DIR", str(build_dir))
+    monkeypatch.setattr(cli, "PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setattr(cli, "settings", SimpleNamespace(BACKEND=True))
+    monkeypatch.setattr(cli, "ensure_node_env", lambda: {"PATH": "test"})
+    monkeypatch.setattr(
+        cli, "is_port_in_use",
+        lambda *_args: pytest.fail("A production iOS run must not check a local backend port"),
+    )
+    monkeypatch.setattr(
+        cli, "start_frontend",
+        lambda *_args, **_kwargs: pytest.fail("A production iOS run must not start Metro"),
+    )
+    monkeypatch.setattr(
+        cli, "run_uvicorn_with_watch",
+        lambda *_args, **_kwargs: pytest.fail("A production iOS run must not start Uvicorn"),
+    )
+    monkeypatch.setattr(
+        cli, "run_frontend",
+        lambda platform, output, **kwargs: calls.append((platform, output, kwargs)) or True,
+    )
+
+    assert cli.run_ios(production=True)
+    assert calls == [("ios", str(build_dir), {
+        "app_name": tmp_path.name,
+        "env": {"PATH": "test", "ONRAMP_ENVIRONMENT": "production"},
+        "environment": "production",
+        "production": True,
+        "force_emulator_updates": False,
+    })]
+
+
+def test_ios_production_flag_dispatches_and_rejects_conflicts_before_repairs(monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr(cli, "run_ios", lambda port, **kwargs: calls.append((port, kwargs)) or True)
+    monkeypatch.setattr(cli, "_clean_empty_shadow_dirs", lambda *_args: None)
+    monkeypatch.setattr(cli.sys, "argv", ["onramp", "ios", "--production"])
+    assert cli.main() == 0
+    assert calls == [(8000, {
+        "metro_port": None,
+        "watch_diagnostics": False,
+        "rebuild": False,
+        "production": True,
+    })]
+
+    monkeypatch.setattr(
+        cli, "_clean_empty_shadow_dirs",
+        lambda *_args: pytest.fail("Invalid production flags must not trigger project repairs"),
+    )
+    for arguments in [
+        ["android", "--production"],
+        ["ios", "--production", "--environment", "staging"],
+        ["ios", "--production", "--metro-port", "8081"],
+        ["ios", "--production", "--rebuild"],
+    ]:
+        monkeypatch.setattr(cli.sys, "argv", ["onramp", *arguments])
+        with pytest.raises(SystemExit) as error:
+            cli.main()
+        assert error.value.code == 2
+    assert "--production" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("command", [
     ["new", "example"], ["run"], ["start"], ["web"], ["backend", "off"],
     ["doctor", "mobile"], ["repair:ios"], ["upgrade"], ["del", "example"],
@@ -1497,7 +1562,8 @@ def test_development_migrate_refuses_to_generate_in_production(
     assert "onramp db upgrade" in capsys.readouterr().out
 
 
-def test_initial_database_make_creates_portable_operations(tmp_path):
+def test_initial_database_make_creates_portable_operations(tmp_path, monkeypatch):
+    monkeypatch.setenv("ONRAMP_ENVIRONMENT", "development")
     app_dir = tmp_path / "app"
     models_dir = app_dir / "models"
     models_dir.mkdir(parents=True)
