@@ -1653,6 +1653,8 @@ Fast Refresh. --rebuild forces native apps to rebuild and reinstall.
 For iOS, --production builds and runs Release on a simulator against the
 configured production API, without Metro or a local backend. It does not
 archive, sign for distribution, upload, or publish the app.
+On Xcode Device Hub, keep the command open for clipboard sharing; Ctrl+C
+stops sharing but leaves the app installed.
 For ios, android, and mobile, --force selects the next available backend port
 when the requested port is occupied and accepts available emulator updates
 without prompting.

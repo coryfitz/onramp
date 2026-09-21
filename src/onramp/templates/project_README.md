@@ -48,7 +48,9 @@ Frontend profile URLs, display-name suffixes, and identifier suffixes live in
 For an iOS production-behavior check, `onramp ios --production` builds and
 launches a self-contained Release app on a simulator against the production
 profile. It does not run a local backend or Metro, and it does not archive,
-sign for distribution, upload to TestFlight, or publish the app.
+sign for distribution, upload to TestFlight, or publish the app. Leave the
+command open to keep Xcode Device Hub clipboard sharing active; Ctrl+C stops
+sharing without uninstalling the app.
 
 Add `--force` to `onramp ios`, `onramp android`, or `onramp mobile` to use the
 next available backend port when the requested port is occupied and accept

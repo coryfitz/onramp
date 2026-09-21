@@ -478,7 +478,10 @@ app and does not start Metro or the local Python backend. This is a local
 production-behavior check, not an App Store archive, signing, TestFlight
 upload, or public release. `onramp ios --environment production` uses the same
 Release behavior; development-only port, Metro, watcher, and rebuild options
-cannot be combined with it.
+cannot be combined with it. On Xcode Device Hub, leave this command running
+to keep the Mac and selected simulator clipboards synchronized. Ctrl+C stops
+the private sync but leaves the app installed and running. Clipboard contents
+are not read or logged by OnRamp.
 
 After the first successful native build, OnRamp reopens the installed app
 without recompiling when its native inputs are unchanged. JavaScript and
@@ -748,7 +751,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 uv run onramp upgrade
-uv run onramp upgrade --to 0.5.56
+uv run onramp upgrade --to 0.5.57
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -788,7 +791,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.56`. Project schema versions are tracked separately from package
+`onramp~=0.5.57`. Project schema versions are tracked separately from package
 versions; `onramp upgrade` applies any required schema migrations, including
 those introduced by patch releases.
 

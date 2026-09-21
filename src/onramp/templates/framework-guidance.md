@@ -46,7 +46,9 @@ tools working on __ONRAMP_APP_NAME__.
   dependencies, choose a device, build, and launch.
 - `onramp ios --production` builds and runs an iOS Release app on a simulator
   with the production profile and no local backend or Metro; it does not
-  archive, sign for distribution, or upload to TestFlight.
+  archive, sign for distribution, or upload to TestFlight. Keep the command
+  open for Xcode Device Hub clipboard sharing; Ctrl+C stops sharing but leaves
+  the app installed.
 - `onramp mobile` launches both native apps with separate Metro servers and at
   most one Python backend process.
 - `--port` is the Python server port. `--metro-port` is the React Native port.
