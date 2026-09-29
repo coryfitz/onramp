@@ -495,6 +495,17 @@ TypeScript are still served fresh by Metro. Use `onramp ios --rebuild`,
 `onramp android --rebuild`, or `onramp mobile --rebuild` to force native
 compilation and installation.
 
+When compilation is needed, OnRamp prepares the first JavaScript bundle while
+Xcode or Gradle builds the native app. Mobile runs still launch Android before
+iOS, avoiding two native compilers competing for memory at once. The Python
+launcher reuses a compatible Node 22 already installed through nvm, even when
+the parent shell uses another Node version; it installs Node only when no
+usable supported runtime is available.
+Android also enables Gradle's task-output cache when the project has no explicit
+`org.gradle.caching` preference, allowing matching compilation outputs to be
+reused after cleans or branch switches. Set `org.gradle.caching=false` in
+`build/android/gradle.properties` to opt out.
+
 Use `onramp ios --force`, `onramp android --force`, or `onramp mobile --force`
 to use the next available backend port when the requested port is occupied and
 automatically accept compatible emulator updates for that run. Without
@@ -575,7 +586,12 @@ read-only checks, but OnRamp will not pass that user-selected path through
 reports the exact required command without changing the system. The run
 then adds the iOS project if it is missing, checks CocoaPods, installs
 Pods, and checks Apple's preferred compatible Simulator runtime build on every
-launch. After reusing current Pods or completing `pod install`, OnRamp raises
+launch. Pod dependency checks compare file contents after the first verified
+installation, so touching unchanged package files does not repeat `pod install`.
+Missing or mismatched Pod lockfiles still require dependency setup.
+Native synchronization preserves equivalent Xcode setting values, so CocoaPods
+removing optional quotes does not trigger another app build on the next launch.
+After reusing current Pods or completing `pod install`, OnRamp raises
 any explicit generated Pod deployment targets below React Native's supported
 iOS minimum. This includes resource-bundle targets and CocoaPods multi-project
 layouts, without changing the app-owned Podfile or lowering newer targets.
@@ -757,7 +773,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 uv run onramp upgrade
-uv run onramp upgrade --to 0.5.59
+uv run onramp upgrade --to 0.5.60
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -797,7 +813,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.59`. Project schema versions are tracked separately from package
+`onramp~=0.5.60`. Project schema versions are tracked separately from package
 versions; `onramp upgrade` applies any required schema migrations, including
 those introduced by patch releases.
 

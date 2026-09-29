@@ -80,9 +80,52 @@ def _current_node_version():
     except Exception:
         return (0, 0, 0)
 
+
+def _installed_nvm_node_bin(nvm_dir: str, minimum: str, major: int) -> Path | None:
+    """Find a usable installed runtime without starting nvm or checking the network."""
+    try:
+        versions = list((Path(nvm_dir) / "versions" / "node").iterdir())
+    except OSError:
+        return None
+
+    required = _semver_tuple(minimum)
+    candidates = sorted(
+        (
+            version for version in versions
+            if re.fullmatch(r"v\d+\.\d+\.\d+", version.name)
+            and _semver_tuple(version.name)[0] == major
+            and _semver_tuple(version.name) >= required
+        ),
+        key=lambda version: _semver_tuple(version.name),
+        reverse=True,
+    )
+    for version in candidates:
+        binary_dir = version / "bin"
+        node = binary_dir / "node"
+        if not all(
+            executable.is_file() and os.access(executable, os.X_OK)
+            for executable in (node, binary_dir / "npm")
+        ):
+            continue
+        try:
+            result = subprocess.run(
+                [str(node), "--version"],
+                text=True,
+                capture_output=True,
+                check=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        actual = _semver_tuple(result.stdout)
+        if actual[0] == major and actual >= required:
+            return binary_dir
+    return None
+
+
 def ensure_node_env(min_required: str = MIN_NODE, track_major: str = "22"):
     """
-    Guarantee Node >= min_required and prefer the latest track_major.x via nvm.
+    Use supported Node from PATH or nvm, installing only when none is available.
     Returns an env dict with PATH pointing to the selected node/npm so all
     subprocesses use it.
     """
@@ -92,8 +135,17 @@ def ensure_node_env(min_required: str = MIN_NODE, track_major: str = "22"):
         # Already on the supported Node track.
         return os.environ.copy()
 
-    # Need to upgrade/switch via nvm
-    nvm_dir = os.path.expanduser("~/.nvm")
+    # A parent shell may use another Node major even though the supported runtime
+    # is installed. Reuse it directly; `nvm install` checks remote versions on
+    # every invocation and makes ordinary native launches depend on the network.
+    nvm_dir = os.path.expanduser(os.environ.get("NVM_DIR") or "~/.nvm")
+    installed_bin = _installed_nvm_node_bin(nvm_dir, min_required, required_major)
+    if installed_bin is not None:
+        env = os.environ.copy()
+        env["PATH"] = f"{installed_bin}{os.pathsep}{env.get('PATH', '')}"
+        return env
+
+    # No usable supported runtime is installed; retain the nvm installation path.
     nvm_sh = os.path.join(nvm_dir, "nvm.sh")
     if not os.path.exists(nvm_sh):
         print("nvm not found; please install nvm (https://github.com/nvm-sh/nvm).")
@@ -102,15 +154,18 @@ def ensure_node_env(min_required: str = MIN_NODE, track_major: str = "22"):
 
     # Ask nvm for latest {track_major}.x and use it (this also covers >= min_required)
     script = f'''
-      export NVM_DIR="{nvm_dir}"
       [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-      nvm install {track_major}
-      nvm use {track_major}
+      nvm install {required_major}
+      nvm use {required_major}
       echo NODE_BIN:$(command -v node)
       echo NPM_BIN:$(command -v npm)
       node --version
     '''
-    res = subprocess.run(["bash", "-lc", script], text=True, capture_output=True)
+    nvm_env = os.environ.copy()
+    nvm_env["NVM_DIR"] = nvm_dir
+    res = subprocess.run(
+        ["bash", "-lc", script], text=True, capture_output=True, env=nvm_env
+    )
     if res.returncode != 0:
         print("Failed to switch Node with nvm. Output:\n", res.stdout or res.stderr)
         return os.environ.copy()
