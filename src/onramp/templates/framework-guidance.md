@@ -109,6 +109,10 @@ tools working on __ONRAMP_APP_NAME__.
 - Add native npm dependencies in `build/` with `npm install --legacy-peer-deps`,
   then rerun `onramp ios` or `onramp android` for autolinking and rebuilding.
 - OnRamp selects a free Metro port instead of reusing an unidentified server.
+- iOS development launches save the selected numeric IPv4 Metro endpoint in
+  the simulator app's preferences. A Home-screen reopen must retain that
+  endpoint instead of falling back to `localhost`; rerunning OnRamp refreshes
+  it when Metro selects a different port.
 - Native `--force` runs select the next available Python backend port when the
   requested port is occupied; without `--force`, changing ports still requires
   confirmation. The selected backend port must flow into generated local native

@@ -260,7 +260,10 @@ gracefully.
 `--port` controls the Python server. `--metro-port` selects a React Native
 Metro port. OnRamp automatically selects a free Metro port when it is omitted.
 If Fast Refresh repeats unexpectedly, run `onramp ios --watch-diagnostics` to
-print the exact source paths Metro may be reacting to.
+print the exact source paths Metro may be reacting to. On iOS, each OnRamp run
+saves the selected numeric IPv4 Metro endpoint in the simulator app, so opening
+the installed development app again keeps the stable route instead of falling
+back to `localhost`.
 `onramp mobile` launches both native apps with separate Metro servers; an
 explicit Metro port is used for iOS and Android starts above it.
 The native command remains active while Metro is running; press Ctrl+C to stop

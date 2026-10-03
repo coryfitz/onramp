@@ -184,7 +184,7 @@ jobs:
           test -d "${app_dir}/build/ios"
           test -d "${app_dir}/build/android"
           cd "${app_dir}/build"
-          npm audit
+          node -e "require('onramp-js/audit').runNpmAudit()"
           npm test
           npm run typecheck
           npm run build:web

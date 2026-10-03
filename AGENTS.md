@@ -310,7 +310,9 @@ change.
   controls, including error screens, must work without browser globals.
 - Bind iOS simulators to Metro through numeric IPv4 loopback. Avoid
   `localhost`, whose dual-stack resolution can repeatedly disconnect Fast
-  Refresh on iOS 26 simulator runtimes.
+  Refresh on iOS 26 simulator runtimes. Persist the selected numeric endpoint
+  in the simulator app's defaults before launch so a later Home-screen reopen
+  does not silently fall back to `localhost`; refresh that value on every run.
 - Generated iOS apps must use UIKit's scene lifecycle. Native synchronization
   may migrate the known React Native 0.86 legacy `AppDelegate` while preserving
   its initial properties, but must fail closed before modifying native files

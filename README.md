@@ -572,7 +572,11 @@ changing module contents, so OnRamp suppresses only HMR cycles whose calculated
 delta has no added, modified, or deleted modules. Real source edits continue to
 use Fast Refresh normally. If refresh behavior remains unexpected, run
 `onramp ios --watch-diagnostics`; OnRamp will print each relevant source event
-with its exact project-relative path.
+with its exact project-relative path. The iOS launcher uses numeric IPv4
+loopback for Metro and saves the selected endpoint in the simulator app's
+preferences, so reopening the installed development app from the Home screen
+does not fall back to the unstable `localhost` route. A later OnRamp run updates
+the saved value whenever Metro selects a different port.
 
 On macOS, `onramp ios` delegates the frontend launch to `onramp-js`. It checks
 Xcode licensing and first-launch readiness before native generation. If setup
@@ -773,7 +777,7 @@ Apply the latest release, or select one explicitly:
 
 ```bash
 uv run onramp upgrade
-uv run onramp upgrade --to 0.5.60
+uv run onramp upgrade --to 0.5.61
 ```
 
 The upgrader downloads a newer OnRamp release into a temporary environment
@@ -813,7 +817,7 @@ modules are included in Metro's initial graph to avoid development-bundle Fast
 Refresh loops.
 
 Generated projects depend on a compatible release line such as
-`onramp~=0.5.60`. Project schema versions are tracked separately from package
+`onramp~=0.5.61`. Project schema versions are tracked separately from package
 versions; `onramp upgrade` applies any required schema migrations, including
 those introduced by patch releases.
 
