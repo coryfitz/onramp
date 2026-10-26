@@ -106,7 +106,7 @@ tools working on __ONRAMP_APP_NAME__.
   application identifiers, versions, build numbers, and the launcher icon.
 - Use `onramp-js/secure-storage` for opted-in device-only secrets after adding
   `react-native-keychain`; never substitute browser storage for credentials.
-- Add native npm dependencies in `build/` with `npm install --legacy-peer-deps`,
+- Add native npm dependencies in `build/` with `npm install`,
   then rerun `onramp ios` or `onramp android` for autolinking and rebuilding.
 - OnRamp selects a free Metro port instead of reusing an unidentified server.
 - iOS development launches save the selected numeric IPv4 Metro endpoint in

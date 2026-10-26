@@ -267,11 +267,13 @@ def test_deploy_init_configures_backend_and_web_targets(tmp_path):
     assert config["default_targets"] == ["backend", "web"]
     assert config["targets"]["backend"]["components"] == ["backend"]
     assert config["targets"]["web"]["components"] == ["web"]
+    assert config["targets"]["web"]["build_command"] == "npm ci && npm run build:web"
     blueprint = (root / "render.yaml").read_text()
     assert "runtime: docker" in blueprint
     assert "runtime: static" in blueprint
     assert "rootDir: build" in blueprint
     assert "staticPublishPath: ./dist" in blueprint
+    assert "buildCommand: npm ci && npm run build:web" in blueprint
     assert ".onramp/deploy-state.json" in (root / ".gitignore").read_text()
 
 

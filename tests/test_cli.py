@@ -431,6 +431,7 @@ def test_project_files_have_real_metadata_and_ignore_native_outputs(tmp_path):
     pyproject = (tmp_path / "pyproject.toml").read_text()
     gitignore = (tmp_path / ".gitignore").read_text()
     agents = (tmp_path / "AGENTS.md").read_text()
+    readme = (tmp_path / "README.md").read_text()
     framework_guidance = (tmp_path / FRAMEWORK_GUIDANCE).read_text()
 
     assert 'name = "my-great-app"' in pyproject
@@ -442,7 +443,18 @@ def test_project_files_have_real_metadata_and_ignore_native_outputs(tmp_path):
     assert FRAMEWORK_GUIDANCE.as_posix() in agents
     assert "My Great App" in agents
     assert "build/ is the editable" in framework_guidance.replace(chr(96), "")
+    assert "npm install <package>" in readme
+    assert "legacy-peer-deps" not in readme
+    assert "legacy-peer-deps" not in framework_guidance
     assert len(agents) < len(framework_guidance)
+
+
+def test_netlify_uses_the_same_standard_npm_resolution_as_scaffolding(tmp_path):
+    cli.write_netlify_toml(str(tmp_path))
+
+    netlify = (tmp_path / "netlify.toml").read_text()
+    assert 'command = "npm ci && npm run build:web"' in netlify
+    assert "legacy-peer-deps" not in netlify
 
 
 def test_generated_settings_make_committed_migrations_authoritative(tmp_path, monkeypatch):

@@ -321,7 +321,7 @@ using the project's peer-dependency strategy, then rerun the platform command:
 
 ```bash
 cd build
-npm install --legacy-peer-deps <package>
+npm install <package>
 cd ..
 onramp ios
 ```
